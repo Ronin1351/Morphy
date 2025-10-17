@@ -1,0 +1,410 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-10-17",
+  "formats": [
+    {
+      "bankId": "generic",
+      "bankName": "Generic Format",
+      "country": "Universal",
+      "supported": true,
+      "popular": true,
+      "description": "Standard bank statement format with date, description, debit, credit, and balance columns",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{1,2}[/\\-\\.]\\d{1,2}[/\\-\\.]\\d{2,4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$",
+        "simple": "^(\\d{1,2}[/\\-\\.]\\d{1,2}[/\\-\\.]\\d{2,4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})\\s*$",
+        "combined": "^(\\d{1,2}[/\\-\\.]\\d{1,2}[/\\-\\.]\\d{2,4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})\\s+([DC])\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "01/15/2025  Grocery Store  45.20  954.80",
+        "01/16/2025  Salary Deposit  1200.00  2154.80"
+      ],
+      "notes": "Default format used when bank cannot be auto-detected"
+    },
+    {
+      "bankId": "chase",
+      "bankName": "Chase Bank",
+      "country": "US",
+      "supported": true,
+      "popular": true,
+      "description": "JPMorgan Chase Bank statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "icon": "https://example.com/icons/chase.png",
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.{30,})\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$",
+        "withReference": "^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d+)\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  GROCERY STORE #123  45.20  1234.56",
+        "10/16/2024  PAYROLL DEPOSIT  1500.00  2734.56"
+      ],
+      "identifiers": [
+        "JPMorgan Chase Bank",
+        "chase.com",
+        "CHASE"
+      ]
+    },
+    {
+      "bankId": "bank_of_america",
+      "bankName": "Bank of America",
+      "country": "US",
+      "supported": true,
+      "popular": true,
+      "description": "Bank of America statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d{2}/\\d{2})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  10/16  AMAZON.COM  89.99  5432.10"
+      ],
+      "identifiers": [
+        "Bank of America",
+        "bankofamerica.com",
+        "BOA"
+      ]
+    },
+    {
+      "bankId": "wells_fargo",
+      "bankName": "Wells Fargo",
+      "country": "US",
+      "supported": true,
+      "popular": true,
+      "description": "Wells Fargo statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "signed",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{1,2}/\\d{1,2}/\\d{4})\\s+(.+?)\\s+([\\-\\+]?[\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  CHECK #1234  -125.50  2345.67",
+        "10/16/2024  DIRECT DEPOSIT  +1500.00  3845.67"
+      ],
+      "identifiers": [
+        "Wells Fargo",
+        "wellsfargo.com",
+        "WF"
+      ]
+    },
+    {
+      "bankId": "bpi",
+      "bankName": "Bank of the Philippine Islands (BPI)",
+      "country": "PH",
+      "supported": true,
+      "popular": true,
+      "description": "BPI bank statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.{40})\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$",
+        "withRef": "^(\\d{2}/\\d{2}/\\d{4})\\s+(\\w+)\\s+(.{30})\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  WITHDRAWAL-ATM BPI MAKATI  2000.00  15432.50",
+        "10/16/2024  INSTAPAY FROM GCASH  5000.00  20432.50"
+      ],
+      "identifiers": [
+        "Bank of the Philippine Islands",
+        "bpi.com.ph",
+        "BPI"
+      ]
+    },
+    {
+      "bankId": "bdo",
+      "bankName": "Banco de Oro (BDO)",
+      "country": "PH",
+      "supported": true,
+      "popular": true,
+      "description": "BDO bank statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  ATM WITHDRAWAL  1000.00  8765.43"
+      ],
+      "identifiers": [
+        "Banco de Oro",
+        "bdo.com.ph",
+        "BDO"
+      ]
+    },
+    {
+      "bankId": "metrobank",
+      "bankName": "Metropolitan Bank (Metrobank)",
+      "country": "PH",
+      "supported": true,
+      "popular": false,
+      "description": "Metrobank statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  ONLINE PURCHASE  350.00  12450.00"
+      ],
+      "identifiers": [
+        "Metropolitan Bank",
+        "metrobank.com.ph",
+        "MBTC"
+      ]
+    },
+    {
+      "bankId": "citi",
+      "bankName": "Citibank",
+      "country": "US",
+      "supported": true,
+      "popular": true,
+      "description": "Citibank statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": false,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  10/16/2024  RESTAURANT PURCHASE  75.50"
+      ],
+      "identifiers": [
+        "Citibank",
+        "citi.com",
+        "CITI"
+      ],
+      "notes": "Running balance not typically included in statements"
+    },
+    {
+      "bankId": "hsbc",
+      "bankName": "HSBC",
+      "country": "UK",
+      "supported": true,
+      "popular": false,
+      "description": "HSBC bank statement format",
+      "dateFormat": "DD/MM/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "15/10/2024  DIRECT DEBIT  125.00  2345.67"
+      ],
+      "identifiers": [
+        "HSBC",
+        "hsbc.com",
+        "HSBC Bank"
+      ]
+    },
+    {
+      "bankId": "barclays",
+      "bankName": "Barclays",
+      "country": "UK",
+      "supported": true,
+      "popular": false,
+      "description": "Barclays bank statement format",
+      "dateFormat": "DD/MM/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "15/10/2024  CARD PAYMENT  45.99  1234.56"
+      ],
+      "identifiers": [
+        "Barclays",
+        "barclays.co.uk",
+        "Barclays Bank"
+      ]
+    },
+    {
+      "bankId": "td_bank",
+      "bankName": "TD Bank",
+      "country": "CA",
+      "supported": true,
+      "popular": false,
+      "description": "TD Bank (Canada) statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  INTERAC E-TRANSFER  100.00  CAD 1500.00"
+      ],
+      "identifiers": [
+        "TD Bank",
+        "td.com",
+        "Toronto-Dominion"
+      ]
+    },
+    {
+      "bankId": "rbc",
+      "bankName": "Royal Bank of Canada (RBC)",
+      "country": "CA",
+      "supported": true,
+      "popular": false,
+      "description": "RBC statement format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "10/15/2024  POS PURCHASE  67.89  2345.67"
+      ],
+      "identifiers": [
+        "Royal Bank",
+        "rbc.com",
+        "RBC"
+      ]
+    },
+    {
+      "bankId": "deutsche_bank",
+      "bankName": "Deutsche Bank",
+      "country": "DE",
+      "supported": true,
+      "popular": false,
+      "description": "Deutsche Bank statement format",
+      "dateFormat": "DD.MM.YYYY",
+      "decimalSeparator": ",",
+      "thousandsSeparator": ".",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}\\.\\d{2}\\.\\d{4})\\s+(.+?)\\s+([\\d.]+,\\d{2})?\\s*([\\d.]+,\\d{2})?\\s+([\\d.]+,\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "15.10.2024  ÜBERWEISUNG  125,50 EUR  2.345,67 EUR"
+      ],
+      "identifiers": [
+        "Deutsche Bank",
+        "deutsche-bank.de",
+        "DB"
+      ],
+      "notes": "Uses European number format with comma as decimal separator"
+    },
+    {
+      "bankId": "anz",
+      "bankName": "ANZ Bank",
+      "country": "AU",
+      "supported": true,
+      "popular": false,
+      "description": "ANZ Bank (Australia) statement format",
+      "dateFormat": "DD/MM/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "separate",
+      "balanceIncluded": true,
+      "patterns": {
+        "standard": "^(\\d{2}/\\d{2}/\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})?\\s*([\\d,]+\\.\\d{2})?\\s+([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "15/10/2024  EFTPOS PURCHASE  45.00  AUD 1234.56"
+      ],
+      "identifiers": [
+        "ANZ Bank",
+        "anz.com",
+        "Australia and New Zealand Banking"
+      ]
+    },
+    {
+      "bankId": "tax_form_1099",
+      "bankName": "IRS Form 1099 (Tax Document)",
+      "country": "US",
+      "supported": true,
+      "popular": false,
+      "description": "US Tax Form 1099 format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "labeled",
+      "balanceIncluded": false,
+      "patterns": {
+        "boxAmount": "^Box\\s+(\\d+[A-Za-z]?)\\s+(.+?)\\s+\\$?([\\d,]+\\.\\d{2})\\s*$",
+        "income": "^(.+?)\\s+\\$?([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "Box 1  Gross Income  $45,678.90",
+        "Interest Income  $234.56"
+      ],
+      "identifiers": [
+        "Form 1099",
+        "1099-INT",
+        "1099-DIV",
+        "Internal Revenue Service"
+      ],
+      "notes": "Tax document, not a bank statement. May require specialized parsing."
+    },
+    {
+      "bankId": "tax_form_w2",
+      "bankName": "IRS Form W-2 (Tax Document)",
+      "country": "US",
+      "supported": true,
+      "popular": false,
+      "description": "US Tax Form W-2 format",
+      "dateFormat": "MM/DD/YYYY",
+      "decimalSeparator": ".",
+      "thousandsSeparator": ",",
+      "amountPosition": "labeled",
+      "balanceIncluded": false,
+      "patterns": {
+        "boxAmount": "^(\\d+)\\s+(.+?)\\s+\\$?([\\d,]+\\.\\d{2})\\s*$",
+        "wages": "^(.+?)\\s+\\$?([\\d,]+\\.\\d{2})\\s*$"
+      },
+      "exampleFormats": [
+        "1  Wages, tips, other compensation  $52,000.00",
+        "2  Federal income tax withheld  $7,800.00"
+      ],
+      "identifiers": [
+        "Form W-2",
+        "W-2",
+        "Wage and Tax Statement"
+      ],
+      "notes": "Tax document for wage/salary income. Requires specialized parsing."
+    }
+  ],
+  "metadata": {
+    "totalFormats": 16,
+    "supportedCountries": ["US", "PH", "UK", "CA", "DE", "AU"],
+    "popularBanks": ["generic", "chase", "bank_of_america", "wells_fargo", "bpi", "bdo", "citi"],
+    "taxDocuments": ["tax_form_1099", "tax_form_w2"]
+  }
+}
