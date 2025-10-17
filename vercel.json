@@ -1,0 +1,136 @@
+{
+  "version": 2,
+  "name": "bank-statement-converter",
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/convert",
+      "dest": "/api/convert.js",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
+      "src": "/api/status/([^/]+)",
+      "dest": "/api/status.js?id=$1",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "src": "/api/download/([^/]+)",
+      "dest": "/api/download.js?id=$1",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "src": "/api/banks",
+      "dest": "/api/banks.js",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "src": "/api/(.*)",
+      "status": 404,
+      "dest": "/api/404.json"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "functions": {
+    "api/convert.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/status.js": {
+      "memory": 256,
+      "maxDuration": 10
+    },
+    "api/download.js": {
+      "memory": 512,
+      "maxDuration": 30
+    },
+    "api/banks.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    },
+    {
+      "source": "/src/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/src/index.html",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/src/index.html"
+    }
+  ],
+  "regions": ["iad1"],
+  "framework": null,
+  "public": true,
+  "github": {
+    "enabled": true,
+    "autoAlias": true,
+    "silent": true
+  }
+}

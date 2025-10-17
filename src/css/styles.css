@@ -1,0 +1,387 @@
+/* ===== EMBOSSED Claymorphism · Landing ===== */
+:root{
+  color-scheme: light dark;
+  --surface-1:#f5f7fa;
+  --surface-2:#e8ecf1;
+  --text:#0d1424;
+  --muted:#62708a;
+  --accent:#FFAA2A; /* brand */
+  --border:rgba(13,20,36,.08);
+  --shadow-dark:rgba(0,0,0,.22);
+  --shadow-light:rgba(255,255,255,.95);
+  --radius-lg:26px;
+  --radius-pill:9999px;
+  /* Inverted gradients for embossed effect */
+  --grad-1:linear-gradient(145deg,#e8ecf1,#f5f7fa);
+  --grad-2:linear-gradient(160deg,#dee4eb,#eff2f6);
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface-1:#0f1626;
+    --surface-2:#1a2332;
+    --text:#e7eef9;
+    --muted:#9badc6;
+    --border:rgba(255,255,255,.06);
+    --shadow-dark:rgba(0,0,0,.65);
+    --shadow-light:rgba(255,255,255,.08);
+    --grad-1:linear-gradient(145deg,#0a1020,#0e172b);
+    --grad-2:linear-gradient(160deg,#0d1525,#12192a);
+  }
+}
+
+/* LIGHT THEME OVERRIDE */
+body[data-theme="light"]{
+  color-scheme:light;
+  --surface-1:#f5f7fa;
+  --surface-2:#e8ecf1;
+  --text:#0d1424;
+  --muted:#62708a;
+  --border:rgba(13,20,36,.08);
+  --shadow-dark:rgba(0,0,0,.22);
+  --shadow-light:rgba(255,255,255,.95);
+  --grad-1:linear-gradient(145deg,#e8ecf1,#f5f7fa);
+  --grad-2:linear-gradient(160deg,#dee4eb,#eff2f6);
+}
+
+/* DARK THEME OVERRIDE */
+body[data-theme="dark"]{
+  color-scheme:dark;
+  --surface-1:#0f1626;
+  --surface-2:#1a2332;
+  --text:#e7eef9;
+  --muted:#9badc6;
+  --border:rgba(255,255,255,.06);
+  --shadow-dark:rgba(0,0,0,.65);
+  --shadow-light:rgba(255,255,255,.08);
+  --grad-1:linear-gradient(145deg,#0a1020,#0e172b);
+  --grad-2:linear-gradient(160deg,#0d1525,#12192a);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font: 15px/1.45 Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: var(--grad-1);
+  color: var(--text);
+}
+
+/* Layout */
+.container{width:min(1120px,92vw); margin-inline:auto; padding:28px}
+.header,.footer{display:flex; align-items:center; justify-content:space-between; gap:16px}
+.nav{display:flex; gap:18px}
+.link{color:var(--text); text-decoration:none; opacity:.9}
+.link:hover{opacity:1}
+.brand{display:flex; align-items:center; gap:10px}
+.title{font-weight:700}
+
+/* Hero */
+.hero{display:grid; grid-template-columns:1.05fr .95fr; gap:28px; padding:28px}
+.hero__text h1{margin:0 0 6px}
+.ticks{margin:12px 0 0; padding-left:18px}
+.ticks li{margin:2px 0}
+
+/* Uploader */
+.uploader{display:grid; gap:12px}
+
+/* EMBOSSED Drop Zone - Pressed In Look */
+.drop{
+  display:grid; place-items:center; text-align:center; gap:10px;
+  min-height:180px; padding:28px;
+  background: var(--grad-2);
+  border:1px solid var(--border);
+  border-radius: var(--radius-lg);
+  /* REVERSED shadows for embossed effect */
+  box-shadow:
+    /* Outer: light top-left, dark bottom-right (reversed!) */
+    -10px -10px 24px var(--shadow-light),
+    10px 10px 24px var(--shadow-dark),
+    /* Inner: strong shadows for carved-in look */
+    inset 3px 3px 8px rgba(0,0,0,.15),
+    inset -3px -3px 8px rgba(255,255,255,.08);
+  transition: transform .18s ease, box-shadow .18s ease;
+  cursor:pointer; outline:none; position:relative;
+}
+
+.drop:focus-visible{
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--accent) 40%, transparent),
+    -10px -10px 24px var(--shadow-light),
+    10px 10px 24px var(--shadow-dark),
+    inset 3px 3px 8px rgba(0,0,0,.15),
+    inset -3px -3px 8px rgba(255,255,255,.08);
+}
+
+.drop.dragover{
+  /* Press deeper when dragging */
+  box-shadow:
+    -8px -8px 20px var(--shadow-light),
+    8px 8px 20px var(--shadow-dark),
+    inset 4px 4px 12px rgba(0,0,0,.20),
+    inset -4px -4px 12px rgba(255,255,255,.05);
+}
+
+.drop input{position:absolute; inset:0; opacity:0; cursor:pointer}
+.icon{width:18px;height:18px; fill:currentColor}
+.icon.xl{width:50px;height:50px; opacity:.95}
+
+.row{display:flex; gap:12px; align-items:end; flex-wrap:wrap}
+.field{display:grid; gap:6px; min-width:220px}
+
+/* EMBOSSED Controls - Sunken Look */
+.control, .btn{
+  font:inherit;
+  padding:10px 14px; border-radius:18px;
+  border:1px solid var(--border);
+  background: var(--grad-2); 
+  color:var(--text);
+  /* Pressed-in appearance */
+  box-shadow: 
+    -6px -6px 16px var(--shadow-light),
+    6px 6px 16px var(--shadow-dark),
+    inset 2px 2px 6px rgba(0,0,0,.12),
+    inset -2px -2px 6px rgba(255,255,255,.06);
+}
+
+.control:focus-visible{
+  outline:3px solid color-mix(in oklab, var(--accent) 45%, transparent); 
+  outline-offset:2px
+}
+
+/* Buttons */
+.btn{
+  display:inline-flex; align-items:center; gap:8px; 
+  cursor:pointer; transition:transform .16s ease, box-shadow .18s ease;
+}
+
+.btn:hover{
+  /* Slightly less pressed on hover */
+  box-shadow: 
+    -7px -7px 18px var(--shadow-light),
+    7px 7px 18px var(--shadow-dark),
+    inset 1.5px 1.5px 5px rgba(0,0,0,.10),
+    inset -1.5px -1.5px 5px rgba(255,255,255,.07);
+}
+
+.btn:active{
+  /* Press deeper on click */
+  box-shadow: 
+    -4px -4px 12px var(--shadow-light),
+    4px 4px 12px var(--shadow-dark),
+    inset 3px 3px 8px rgba(0,0,0,.16),
+    inset -3px -3px 8px rgba(255,255,255,.04);
+  transform: scale(0.98);
+}
+
+/* EMBOSSED Primary Button - Raised with Glow */
+.btn.primary{
+  color:#0b0b0b;
+  background: linear-gradient(145deg, 
+    color-mix(in oklab, var(--accent) 85%, white), 
+    color-mix(in oklab, var(--accent) 75%, black)
+  );
+  /* Slightly RAISED (opposite of other elements) for contrast */
+  box-shadow:
+    /* Subtle outer depth */
+    8px 8px 18px var(--shadow-dark),
+    -8px -8px 18px var(--shadow-light),
+    /* Inner highlights */
+    inset 0 2px 4px rgba(255,255,255,.25),
+    inset 0 -2px 4px rgba(0,0,0,.15),
+    /* Accent glow */
+    0 0 25px color-mix(in oklab, var(--accent) 40%, transparent),
+    0 0 50px color-mix(in oklab, var(--accent) 25%, transparent);
+}
+
+.btn.primary:hover{
+  box-shadow:
+    10px 10px 22px var(--shadow-dark),
+    -10px -10px 22px var(--shadow-light),
+    inset 0 2px 4px rgba(255,255,255,.3),
+    inset 0 -2px 4px rgba(0,0,0,.18),
+    0 0 30px color-mix(in oklab, var(--accent) 50%, transparent),
+    0 0 60px color-mix(in oklab, var(--accent) 35%, transparent);
+  transform: translateY(-1px);
+}
+
+.btn.primary:active{
+  /* Push down on click */
+  box-shadow:
+    5px 5px 14px var(--shadow-dark),
+    -5px -5px 14px var(--shadow-light),
+    inset 0 1px 3px rgba(0,0,0,.2),
+    0 0 20px color-mix(in oklab, var(--accent) 35%, transparent);
+  transform: translateY(0) scale(0.98);
+}
+
+.btn.ghost{
+  background:transparent;
+  box-shadow:none;
+  border:none;
+}
+
+.btn.ghost:hover{
+  background: var(--grad-2);
+  box-shadow: 
+    -6px -6px 16px var(--shadow-light),
+    6px 6px 16px var(--shadow-dark),
+    inset 2px 2px 6px rgba(0,0,0,.08),
+    inset -2px -2px 6px rgba(255,255,255,.04);
+}
+
+.grid.three{margin-top:24px; display:grid; grid-template-columns:1fr 1fr .8fr; gap:24px}
+.card{padding:20px}
+
+/* EMBOSSED Clay Cards - Deep Carved Look */
+.clay{
+  background: var(--grad-2);
+  border:1px solid var(--border);
+  border-radius: var(--radius-lg);
+  /* REVERSED outer shadows + strong inner shadows */
+  box-shadow:
+    /* Outer: creates embossed frame */
+    -12px -12px 26px var(--shadow-light),
+    12px 12px 26px var(--shadow-dark),
+    /* Inner: deep carved effect */
+    inset 3px 3px 10px rgba(0,0,0,.18),
+    inset -3px -3px 10px rgba(255,255,255,.08),
+    /* Subtle accent glow */
+    0 0 20px color-mix(in oklab, var(--accent) 18%, transparent);
+  transition: box-shadow .2s ease, transform .18s ease;
+  content-visibility:auto;
+}
+
+.clay:hover{
+  /* Slightly lift on hover */
+  box-shadow:
+    -14px -14px 30px var(--shadow-light),
+    14px 14px 30px var(--shadow-dark),
+    inset 2px 2px 8px rgba(0,0,0,.15),
+    inset -2px -2px 8px rgba(255,255,255,.10),
+    0 0 25px color-mix(in oklab, var(--accent) 25%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Table */
+.table-wrap{overflow:auto}
+.table{width:100%; border-collapse:separate; border-spacing:0 8px}
+.table thead th{font-weight:600; padding:4px 8px 0 8px; color:var(--muted); text-align:left}
+
+/* EMBOSSED Table Cells */
+.table tbody td{
+  background:var(--surface-1); 
+  border:1px solid var(--border); 
+  padding:10px 12px;
+  box-shadow:
+    inset 2px 2px 5px rgba(0,0,0,.10),
+    inset -1px -1px 3px rgba(255,255,255,.05);
+}
+
+.table tbody tr td:first-child{border-radius:16px 0 0 16px}
+.table tbody tr td:last-child{border-radius:0 16px 16px 0}
+.table th[data-key]{cursor:pointer}
+.table th[data-key]::after{content:" ↕"; opacity:.6}
+
+/* EMBOSSED Swatches - Pressed Circles */
+.swatches{display:grid; grid-template-columns:repeat(5,1fr); gap:10px}
+.swatch{
+  height:36px; 
+  border-radius:14px; 
+  border:1px solid var(--border); 
+  cursor:pointer;
+  box-shadow: 
+    -6px -6px 14px var(--shadow-light), 
+    6px 6px 14px var(--shadow-dark),
+    inset 2px 2px 6px rgba(0,0,0,.15),
+    inset -2px -2px 6px rgba(255,255,255,.06);
+  transition: box-shadow .15s ease;
+}
+
+.swatch:hover{
+  box-shadow: 
+    -7px -7px 16px var(--shadow-light), 
+    7px 7px 16px var(--shadow-dark),
+    inset 1.5px 1.5px 5px rgba(0,0,0,.12),
+    inset -1.5px -1.5px 5px rgba(255,255,255,.08);
+}
+
+.swatch:active{
+  box-shadow: 
+    -4px -4px 10px var(--shadow-light), 
+    4px 4px 10px var(--shadow-dark),
+    inset 3px 3px 8px rgba(0,0,0,.20),
+    inset -3px -3px 8px rgba(255,255,255,.04);
+}
+
+/* Footer */
+.footer{margin-top:24px; padding-top:12px; border-top:1px solid var(--border)}
+.small{font-size:12px}
+.muted{color:var(--muted)}
+
+/* EMBOSSED Modal */
+.modal{position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.40); padding:24px}
+.modal[hidden]{display:none}
+
+.panel{
+  width:min(520px, 96vw); 
+  padding:16px;
+  background: var(--grad-2);
+  border:1px solid var(--border);
+  border-radius: var(--radius-lg);
+  /* Deeply carved panel */
+  box-shadow:
+    -16px -16px 32px var(--shadow-light),
+    16px 16px 32px var(--shadow-dark),
+    inset 4px 4px 12px rgba(0,0,0,.20),
+    inset -4px -4px 12px rgba(255,255,255,.08);
+}
+
+.panel__hd,.panel__ft{display:flex; align-items:center; justify-content:space-between; gap:12px}
+.panel__bd{padding:10px 0 16px}
+
+/* Utilities */
+.stack-col{display:grid; gap:10px}
+.hide-sm{display:inline}
+
+@media (max-width: 900px){
+  .hero{grid-template-columns:1fr}
+  .grid.three{grid-template-columns:1fr}
+  .hide-sm{display:none}
+}
+
+/* Focus + motion */
+:focus-visible{outline:3px solid color-mix(in oklab, var(--accent) 45%, transparent); outline-offset:2px}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
+
+/* Toast notifications remain raised for visibility */
+.toasts{position:fixed; bottom:24px; right:24px; z-index:9999; display:grid; gap:10px}
+.toast{
+  padding:14px 20px;
+  background: var(--grad-2);
+  border:1px solid var(--border);
+  border-radius: var(--radius-lg);
+  /* Raised appearance for toasts */
+  box-shadow:
+    8px 8px 20px var(--shadow-dark),
+    -8px -8px 20px var(--shadow-light),
+    inset 0 1px 2px rgba(255,255,255,.1);
+  animation: toastIn 0.3s ease;
+}
+
+@keyframes toastIn{
+  from{ opacity:0; transform: translateX(100%); }
+  to{ opacity:1; transform: translateX(0); }
+}
+
+/*
+
+/* OLD (raised): 
+box-shadow: 12px 12px dark, -12px -12px light;
+
+/* NEW (embossed): 
+box-shadow: -12px -12px light, 12px 12px dark;
+
+inset 3px 3px 10px rgba(0,0,0,.18),    /* Dark carved edge 
+inset -3px -3px 10px rgba(255,255,255,.08)  /* Light carved edge 
+*/

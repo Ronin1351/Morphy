@@ -1,0 +1,73 @@
+{
+  "name": "bank-statement-converter",
+  "version": "1.0.0",
+  "description": "Convert bank statements and tax documents (PDF) to Excel format with intelligent transaction extraction",
+  "main": "src/js/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step required'",
+    "start": "vercel dev",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "npm test -- --watch",
+    "lint": "eslint api/**/*.js src/**/*.js",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "clean": "rm -rf .vercel .tmp-storage node_modules/.cache"
+  },
+  "keywords": [
+    "pdf",
+    "excel",
+    "bank-statement",
+    "tax-documents",
+    "converter",
+    "pdf-parser",
+    "transaction-extraction",
+    "vercel",
+    "serverless"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/bank-statement-converter.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.23.0",
+    "exceljs": "^4.4.0",
+    "formidable": "^3.5.1",
+    "pdf-parse": "^1.1.1",
+    "tesseract.js": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.4",
+    "vercel": "^48.4.0"
+  },
+  "vercel": {
+    "functions": {
+      "api/**/*.js": {
+        "memory": 1024,
+        "maxDuration": 60
+      }
+    }
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "api/**/*.js",
+      "!api/**/node_modules/**"
+    ]
+  }
+}
