@@ -1,489 +1,352 @@
 /**
- * API Client - FIXED VERSION with comprehensive error handling
- * Handles all HTTP requests to serverless functions
+ * API Client - Frontend HTTP Client for Backend Communication
+ * Handles all API requests with error handling and retries
+ * 
+ * @module api
  */
 
 // Configuration
-const API_BASE_URL = process.env.API_BASE_URL || '/api';
-const DEFAULT_TIMEOUT = 60000; // Increased to 60 seconds
-const POLL_INTERVAL = 2000;
-const DEBUG = true; // Enable debugging
+const API_BASE_URL = window.location.origin;
+const DEFAULT_TIMEOUT = 30000; // 30 seconds
+const POLL_INTERVAL = 2000; // 2 seconds
+const MAX_POLL_ATTEMPTS = 60; // 2 minutes max
 
 /**
- * Debug logger
+ * Debug logging
  */
-function debugLog(message, data = null) {
-  if (DEBUG) {
-    console.log(`[API] ${new Date().toISOString()} - ${message}`, data || '');
+function debugLog(method, url, data = {}) {
+  console.log(`[API] ${method} ${url}`, data);
+}
+
+function errorLog(method, url, error, data = {}) {
+  console.error(`[API ERROR] ${method} ${url}`, {
+    error: error?.message,
+    ...data
+  });
+}
+
+/**
+ * File validation
+ * 
+ * @param {File} file - File to validate
+ * @returns {{valid: boolean, errors: Array, warnings: Array}}
+ */
+export function validateFile(file) {
+  debugLog('VALIDATE', 'File', {
+    name: file.name,
+    size: file.size,
+    type: file.type
+  });
+
+  const errors = [];
+  const warnings = [];
+
+  // Check if file exists
+  if (!file) {
+    errors.push({
+      code: 'NO_FILE',
+      message: 'No file provided'
+    });
+    return { valid: false, errors, warnings };
+  }
+
+  // Check file type
+  const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  
+  if (!isPDF) {
+    errors.push({
+      code: 'INVALID_TYPE',
+      message: 'Only PDF files are supported'
+    });
+  }
+
+  // Check file size (50MB max)
+  const MAX_SIZE = 50 * 1024 * 1024;
+  
+  if (file.size === 0) {
+    errors.push({
+      code: 'EMPTY_FILE',
+      message: 'File is empty (0 bytes)'
+    });
+  } else if (file.size > MAX_SIZE) {
+    errors.push({
+      code: 'FILE_TOO_LARGE',
+      message: `File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum allowed (50MB)`
+    });
+  }
+
+  // Warnings for large files
+  if (file.size > 10 * 1024 * 1024 && file.size <= MAX_SIZE) {
+    warnings.push({
+      code: 'LARGE_FILE',
+      message: `Large file (${(file.size / 1024 / 1024).toFixed(2)}MB) may take longer to process`
+    });
+  }
+
+  const result = {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+
+  debugLog('VALIDATE', 'Result', result);
+  return result;
+}
+
+/**
+ * Convert file
+ * 
+ * @param {File} file - PDF file to convert
+ * @param {Object} options - Conversion options
+ * @param {Function} onProgress - Progress callback (0-100)
+ * @returns {Promise<{processingId: string}>}
+ */
+export async function convertFile(file, options = {}, onProgress = null) {
+  debugLog('CONVERT', 'Starting conversion', {
+    filename: file.name,
+    size: file.size,
+    options
+  });
+
+  try {
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('format', options.format || 'xlsx');
+    
+    if (options.bankFormat) {
+      formData.append('bankFormat', options.bankFormat);
+    }
+    
+    formData.append('includeSummary', String(options.includeSummary !== false));
+    formData.append('includeLog', String(options.includeLog !== false));
+
+    debugLog('CONVERT', 'Sending request to /api/convert');
+
+    // Call progress callback for upload start
+    if (onProgress) {
+      onProgress(5);
+    }
+
+    // Send request
+    const response = await fetch(`${API_BASE_URL}/api/convert`, {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type header - browser will set it with boundary for multipart/form-data
+    });
+
+    debugLog('CONVERT', 'Response received', {
+      status: response.status,
+      ok: response.ok
+    });
+
+    // Call progress callback for upload complete
+    if (onProgress) {
+      onProgress(10);
+    }
+
+    // Parse response
+    const data = await response.json();
+
+    if (!response.ok) {
+      debugLog('CONVERT', 'Request failed', {
+        status: response.status,
+        error: data.error
+      });
+
+      throw new Error(data.error?.message || 'Conversion request failed');
+    }
+
+    if (!data.success || !data.processingId) {
+      throw new Error('Invalid response from server');
+    }
+
+    debugLog('CONVERT', 'Conversion started successfully', {
+      processingId: data.processingId,
+      fileId: data.fileId
+    });
+
+    return {
+      processingId: data.processingId,
+      fileId: data.fileId,
+      pollUrl: data.pollUrl
+    };
+
+  } catch (error) {
+    errorLog('CONVERT', 'Conversion failed', error, {
+      filename: file.name
+    });
+
+    // Re-throw with more context
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error('Network error: Unable to reach server. Please check your connection.');
+    }
+
+    throw error;
   }
 }
 
 /**
- * API Client class
+ * Poll processing status
+ * 
+ * @param {string} processingId - Processing ID from convertFile
+ * @param {Function} onProgress - Progress callback with status object
+ * @param {number} maxAttempts - Maximum polling attempts
+ * @returns {Promise<Object>} Final result
  */
-class APIClient {
-  constructor(baseURL = API_BASE_URL) {
-    this.baseURL = baseURL;
-    this.defaultHeaders = {
-      'Accept': 'application/json',
-    };
-    debugLog('APIClient initialized', { baseURL });
-  }
+export async function pollStatus(processingId, onProgress = null, maxAttempts = MAX_POLL_ATTEMPTS) {
+  debugLog('POLL', 'Starting status polling', {
+    processingId,
+    maxAttempts,
+    interval: POLL_INTERVAL
+  });
 
-  /**
-   * Make HTTP request with enhanced error handling
-   */
-  async request(endpoint, options = {}) {
-    const url = `${this.baseURL}${endpoint}`;
-    debugLog('Making request', { url, method: options.method || 'GET' });
-    
-    const config = {
-      ...options,
-      headers: {
-        ...this.defaultHeaders,
-        ...options.headers,
-      },
-    };
+  let attempts = 0;
 
-    // Add timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => {
-        debugLog('Request timeout', { url, timeout: options.timeout || DEFAULT_TIMEOUT });
-        controller.abort();
-      },
-      options.timeout || DEFAULT_TIMEOUT
-    );
-    config.signal = controller.signal;
+  while (attempts < maxAttempts) {
+    attempts++;
 
     try {
-      debugLog('Fetching...', { url });
-      const response = await fetch(url, config);
-      clearTimeout(timeoutId);
+      debugLog('POLL', `Attempt ${attempts}/${maxAttempts}`, { processingId });
 
-      debugLog('Response received', {
-        status: response.status,
-        statusText: response.statusText,
-        contentType: response.headers.get('content-type'),
+      const response = await fetch(`${API_BASE_URL}/api/status?id=${processingId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      // Handle non-JSON responses (like file downloads)
-      const contentType = response.headers.get('content-type');
-      if (contentType && !contentType.includes('application/json')) {
-        debugLog('Non-JSON response, returning blob');
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Processing ID not found or expired');
+        }
+        throw new Error(data.error?.message || 'Status check failed');
+      }
+
+      debugLog('POLL', 'Status received', {
+        status: data.status,
+        progress: data.progress,
+        currentStep: data.currentStep
+      });
+
+      // Call progress callback
+      if (onProgress) {
+        onProgress({
+          status: data.status,
+          progress: data.progress,
+          currentStep: data.currentStep,
+          attempt: attempts
+        });
+      }
+
+      // Check if completed
+      if (data.status === 'completed') {
+        debugLog('POLL', 'Processing completed successfully', {
+          result: data.result
+        });
+
         return {
-          ok: response.ok,
-          status: response.status,
-          data: await response.blob(),
-          headers: response.headers,
+          status: 'completed',
+          processingId: data.processingId,
+          result: data.result,
+          duration: data.duration
         };
       }
 
-      // Parse JSON response
-      let data;
-      try {
-        const text = await response.text();
-        debugLog('Response text length', { length: text.length });
-        
-        if (!text) {
-          throw new Error('Empty response body');
-        }
-        
-        data = JSON.parse(text);
-        debugLog('JSON parsed successfully', {
-          success: data.success,
-          hasError: !!data.error,
+      // Check if failed
+      if (data.status === 'error') {
+        debugLog('POLL', 'Processing failed', {
+          error: data.error
         });
-      } catch (parseError) {
-        debugLog('ERROR: JSON parse failed', {
-          error: parseError.message,
-          status: response.status,
-        });
-        
-        throw new APIError(
-          'Invalid JSON response from server',
-          response.status,
-          'PARSE_ERROR',
-          { parseError: parseError.message }
-        );
+
+        throw new Error(data.error?.message || 'Processing failed');
       }
 
-      if (!response.ok) {
-        const errorMessage = data.error?.message || data.message || 'Request failed';
-        const errorCode = data.error?.code || 'REQUEST_FAILED';
-        const errorDetails = data.error?.details || data.details;
-        
-        debugLog('ERROR: Request failed', {
-          status: response.status,
-          code: errorCode,
-          message: errorMessage,
-          details: errorDetails,
-        });
-
-        throw new APIError(
-          errorMessage,
-          response.status,
-          errorCode,
-          data
-        );
-      }
-
-      return data;
+      // Still processing, wait before next poll
+      await sleep(POLL_INTERVAL);
 
     } catch (error) {
-      clearTimeout(timeoutId);
+      errorLog('POLL', `Attempt ${attempts} failed`, error, { processingId });
 
-      if (error.name === 'AbortError') {
-        debugLog('ERROR: Request aborted (timeout)');
-        throw new APIError('Request timeout - server took too long to respond', 408, 'TIMEOUT');
+      // If it's the last attempt, throw the error
+      if (attempts >= maxAttempts) {
+        throw new Error(`Polling timeout after ${attempts} attempts: ${error.message}`);
       }
 
-      if (error instanceof APIError) {
-        throw error;
+      // For other errors, wait and retry
+      if (!error.message.includes('not found')) {
+        await sleep(POLL_INTERVAL);
+      } else {
+        throw error; // Don't retry if processing ID not found
       }
-
-      // Network error or other fetch error
-      debugLog('ERROR: Network or fetch error', {
-        name: error.name,
-        message: error.message,
-      });
-
-      throw new APIError(
-        error.message || 'Network error - please check your connection',
-        0,
-        'NETWORK_ERROR',
-        { originalError: error.message }
-      );
     }
   }
 
-  /**
-   * POST request with enhanced logging
-   */
-  async post(endpoint, body, options = {}) {
-    debugLog('POST request', { endpoint });
+  // Timeout
+  throw new Error(`Processing timeout: No response after ${maxAttempts * POLL_INTERVAL / 1000} seconds`);
+}
+
+/**
+ * Download file
+ * 
+ * @param {string} url - Download URL
+ * @param {string} filename - Suggested filename
+ */
+export async function downloadFile(url, filename) {
+  debugLog('DOWNLOAD', 'Starting download', { url, filename });
+
+  try {
+    // Create a temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
     
-    const config = {
-      method: 'POST',
-      ...options,
-    };
-
-    // Handle FormData (for file uploads)
-    if (body instanceof FormData) {
-      config.body = body;
-      debugLog('Sending FormData', {
-        hasFile: body.has('file'),
-        keys: Array.from(body.keys()),
-      });
-      // Don't set Content-Type for FormData, let browser set it with boundary
-    } else {
-      config.headers = {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      };
-      config.body = JSON.stringify(body);
-      debugLog('Sending JSON body');
-    }
-
-    return this.request(endpoint, config);
-  }
-
-  /**
-   * Convert PDF to Excel with progress tracking
-   */
-  async convertFile(file, options = {}, onProgress = null) {
-    debugLog('convertFile called', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type,
-      options,
-    });
-
-    // Validate file before upload
-    const validation = this.validateFile(file);
-    if (!validation.valid) {
-      debugLog('ERROR: File validation failed', validation.errors);
-      const error = new APIError(
-        validation.errors[0]?.message || 'File validation failed',
-        400,
-        validation.errors[0]?.code || 'VALIDATION_ERROR',
-        { validation }
-      );
-      throw error;
-    }
-
-    if (validation.warnings.length > 0) {
-      debugLog('File validation warnings', validation.warnings);
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
+    document.body.appendChild(link);
+    link.click();
     
-    // Add options
-    if (options.bankFormat) {
-      formData.append('bank_name', options.bankFormat);
-    }
-    if (options.format) {
-      formData.append('format', options.format);
-    }
-    if (options.includeSummary !== undefined) {
-      formData.append('include_summary', options.includeSummary.toString());
-    }
-    if (options.includeLog !== undefined) {
-      formData.append('include_log', options.includeLog.toString());
-    }
-    if (options.validateOnly) {
-      formData.append('validate_only', 'true');
-    }
+    // Cleanup
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
 
-    debugLog('FormData prepared', {
-      bankFormat: options.bankFormat,
-      format: options.format,
-    });
+    debugLog('DOWNLOAD', 'Download initiated', { filename });
 
-    // Upload with progress tracking
-    if (onProgress && typeof XMLHttpRequest !== 'undefined') {
-      debugLog('Using XMLHttpRequest for progress tracking');
-      return this.uploadWithProgress('/convert', formData, onProgress);
-    }
-
-    debugLog('Using fetch (no progress tracking)');
-    return this.post('/convert', formData, { timeout: 120000 }); // 2 minute timeout for conversion
-  }
-
-  /**
-   * Upload file with progress tracking using XMLHttpRequest
-   */
-  uploadWithProgress(endpoint, formData, onProgress) {
-    return new Promise((resolve, reject) => {
-      debugLog('Starting upload with progress tracking', { endpoint });
-      const xhr = new XMLHttpRequest();
-
-      // Progress tracking
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const percentComplete = (e.loaded / e.total) * 100;
-          debugLog('Upload progress', {
-            loaded: e.loaded,
-            total: e.total,
-            percent: percentComplete.toFixed(2),
-          });
-          onProgress(percentComplete);
-        }
-      });
-
-      // Load (success or error response)
-      xhr.addEventListener('load', () => {
-        debugLog('Upload complete', {
-          status: xhr.status,
-          statusText: xhr.statusText,
-        });
-
-        try {
-          const response = JSON.parse(xhr.responseText);
-          debugLog('Response parsed', { success: response.success });
-          
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(response);
-          } else {
-            const error = new APIError(
-              response.error?.message || response.message || 'Upload failed',
-              xhr.status,
-              response.error?.code || 'UPLOAD_FAILED',
-              response
-            );
-            debugLog('ERROR: Upload failed with error response', {
-              code: error.code,
-              message: error.message,
-            });
-            reject(error);
-          }
-        } catch (parseError) {
-          debugLog('ERROR: Failed to parse response', {
-            error: parseError.message,
-            responseText: xhr.responseText.substring(0, 200),
-          });
-          
-          reject(new APIError(
-            'Invalid response from server',
-            xhr.status,
-            'PARSE_ERROR',
-            { parseError: parseError.message }
-          ));
-        }
-      });
-
-      // Network error
-      xhr.addEventListener('error', () => {
-        debugLog('ERROR: Network error during upload');
-        reject(new APIError(
-          'Network error during upload - please check your connection',
-          0,
-          'NETWORK_ERROR'
-        ));
-      });
-
-      // Upload aborted
-      xhr.addEventListener('abort', () => {
-        debugLog('Upload aborted');
-        reject(new APIError('Upload cancelled by user', 0, 'CANCELLED'));
-      });
-
-      // Timeout
-      xhr.addEventListener('timeout', () => {
-        debugLog('ERROR: Upload timeout');
-        reject(new APIError('Upload timeout - server took too long to respond', 408, 'TIMEOUT'));
-      });
-
-      // Send request
-      const url = `${this.baseURL}${endpoint}`;
-      debugLog('Opening XHR connection', { url });
-      xhr.open('POST', url);
-      xhr.timeout = 120000; // 2 minute timeout
-      xhr.send(formData);
-    });
-  }
-
-  /**
-   * Validate file before upload
-   */
-  validateFile(file) {
-    debugLog('Validating file', {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    });
-
-    const errors = [];
-    const warnings = [];
-
-    // Check file type
-    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
-      errors.push({
-        code: 'INVALID_FILE_TYPE',
-        message: `Invalid file type: "${file.type}". Only PDF files are supported.`,
-      });
-    }
-
-    // Check file size (50MB limit)
-    const maxSize = 50 * 1024 * 1024;
-    if (file.size > maxSize) {
-      errors.push({
-        code: 'FILE_TOO_LARGE',
-        message: `File size (${this.formatFileSize(file.size)}) exceeds maximum allowed size (50MB)`,
-      });
-    }
-
-    // Check if file is empty
-    if (file.size === 0) {
-      errors.push({
-        code: 'EMPTY_FILE',
-        message: 'File is empty (0 bytes)',
-      });
-    }
-
-    // Warn if file is very large
-    if (file.size > 10 * 1024 * 1024 && file.size <= maxSize) {
-      warnings.push({
-        code: 'LARGE_FILE',
-        message: 'Large file may take longer to process (>10MB)',
-      });
-    }
-
-    const result = {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-    };
-
-    debugLog('Validation result', result);
-    return result;
-  }
-
-  /**
-   * Format file size for display
-   */
-  formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  }
-
-  /**
-   * Sleep utility
-   */
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  } catch (error) {
+    errorLog('DOWNLOAD', 'Download failed', error, { url, filename });
+    throw new Error(`Failed to download file: ${error.message}`);
   }
 }
 
 /**
- * Custom API Error class with detailed information
+ * Sleep helper
  */
-class APIError extends Error {
-  constructor(message, statusCode, code, details = null) {
-    super(message);
-    this.name = 'APIError';
-    this.statusCode = statusCode;
-    this.code = code;
-    this.details = details;
-    this.timestamp = new Date().toISOString();
-    
-    // Log error details
-    debugLog('APIError created', {
-      code,
-      statusCode,
-      message,
-      hasDetails: !!details,
-    });
-  }
-
-  toJSON() {
-    return {
-      name: this.name,
-      message: this.message,
-      statusCode: this.statusCode,
-      code: this.code,
-      details: this.details,
-      timestamp: this.timestamp,
-    };
-  }
-
-  /**
-   * Get user-friendly error message
-   */
-  getUserMessage() {
-    // Map technical errors to user-friendly messages
-    const userMessages = {
-      'NO_FILE_PROVIDED': 'Please select a PDF file to upload.',
-      'INVALID_FILE_TYPE': 'Only PDF files are supported. Please select a PDF file.',
-      'FILE_TOO_LARGE': 'File is too large. Maximum size is 50MB.',
-      'EMPTY_FILE': 'The selected file is empty. Please choose a valid PDF.',
-      'TIMEOUT': 'Request timed out. Please try again.',
-      'NETWORK_ERROR': 'Network error. Please check your connection and try again.',
-      'PARSE_ERROR': 'Server response error. Please try again.',
-      'UPLOAD_FAILED': 'Upload failed. Please try again.',
-      'PROCESSING_FAILED': 'Processing failed. Please check the file and try again.',
-    };
-
-    return userMessages[this.code] || this.message || 'An unexpected error occurred.';
-  }
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Create singleton instance
-const apiClient = new APIClient();
-
-// Export both class and instance
-export { APIClient, APIError };
-export default apiClient;
-
-// Export convenience methods with logging
-export const convertFile = (file, options, onProgress) => {
-  debugLog('convertFile wrapper called');
-  return apiClient.convertFile(file, options, onProgress);
+/**
+ * API Client instance
+ */
+const apiClient = {
+  validateFile,
+  convertFile,
+  pollStatus,
+  downloadFile,
+  
+  // Configuration getters
+  getBaseUrl: () => API_BASE_URL,
+  getPollInterval: () => POLL_INTERVAL,
+  getMaxPollAttempts: () => MAX_POLL_ATTEMPTS,
 };
 
-export const validateFile = (file) => {
-  debugLog('validateFile wrapper called');
-  return apiClient.validateFile(file);
+// Export default and named exports
+export default apiClient;
+
+// Also export individual functions for convenience
+export {
+  apiClient,
+  downloadFile,
 };
