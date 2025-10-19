@@ -111,49 +111,69 @@ class ValidationResult {
 export function validateFile(fileBuffer, filename, mimetype) {
   const result = new ValidationResult();
 
-  // Check if file is empty
-  if (!fileBuffer || fileBuffer.length === 0) {
-    result.addError(
-      ErrorCodes.EMPTY_FILE,
-      'File is empty',
-      Severity.CRITICAL,
-      { filename }
-    );
+  // Normalize buffer to a Uint8Array
+  let bytes;
+  if (!fileBuffer) {
+    result.addError(ErrorCodes.EMPTY_FILE, 'File is empty', Severity.CRITICAL, { filename });
+    return result;
+  } else if (Buffer.isBuffer(fileBuffer)) {
+    bytes = fileBuffer; // Node Buffer is fine
+  } else if (fileBuffer instanceof ArrayBuffer) {
+    bytes = new Uint8Array(fileBuffer);
+  } else if (ArrayBuffer.isView(fileBuffer)) {
+    bytes = new Uint8Array(fileBuffer.buffer);
+  } else {
+    result.addError(ErrorCodes.CORRUPTED_FILE, 'Unsupported file buffer type', Severity.CRITICAL, { filename, type: typeof fileBuffer });
     return result;
   }
 
-  // Check file size
-  if (fileBuffer.length > MAX_FILE_SIZE) {
+  // Size checks
+  if (bytes.length === 0) {
+    result.addError(ErrorCodes.EMPTY_FILE, 'File is empty', Severity.CRITICAL, { filename });
+    return result;
+  }
+  if (bytes.length > MAX_FILE_SIZE) {
     result.addError(
       ErrorCodes.FILE_TOO_LARGE,
-      `File size (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / 1024 / 1024}MB)`,
+      `File size (${(bytes.length/1024/1024).toFixed(2)}MB) exceeds maximum allowed (${MAX_FILE_SIZE/1024/1024}MB)`,
       Severity.CRITICAL,
-      { size: fileBuffer.length, maxSize: MAX_FILE_SIZE }
+      { size: bytes.length, maxSize: MAX_FILE_SIZE }
     );
   }
 
-  // Check file type
+  // Type / extension checks
   const allowedTypes = ['application/pdf'];
   const allowedExtensions = ['.pdf'];
-  const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
 
-  if (!allowedTypes.includes(mimetype) && !allowedExtensions.includes(fileExtension)) {
+  const safeName = typeof filename === 'string' ? filename : '';
+  const dot = safeName.lastIndexOf('.');
+  const fileExtension = dot !== -1 ? safeName.slice(dot).toLowerCase() : '';
+  const typeNormalized = (mimetype || '').split(';')[0].trim().toLowerCase();
+
+  const typeOk = allowedTypes.includes(typeNormalized) || typeNormalized.startsWith('application/pdf');
+  const extOk = allowedExtensions.includes(fileExtension);
+
+  if (!typeOk || !extOk) {
     result.addError(
       ErrorCodes.INVALID_FILE_TYPE,
-      `Invalid file type. Only PDF files are supported. Received: ${mimetype}`,
+      `Invalid file type. Only PDF files are supported. Received: ${mimetype || 'unknown'} (${fileExtension || 'no extension'})`,
       Severity.CRITICAL,
       { mimetype, filename }
     );
   }
 
-  // Check PDF magic bytes
-  const pdfMagicBytes = [0x25, 0x50, 0x44, 0x46]; // %PDF
-  const hasPdfSignature = pdfMagicBytes.every((byte, i) => fileBuffer[i] === byte);
+  // PDF signature (guard length first)
+  const hasPdfSignature =
+    bytes.length >= 4 &&
+    bytes[0] === 0x25 && // %
+    bytes[1] === 0x50 && // P
+    bytes[2] === 0x44 && // D
+    bytes[3] === 0x46;   // F
 
   if (!hasPdfSignature) {
     result.addError(
       ErrorCodes.CORRUPTED_FILE,
-      'File does not appear to be a valid PDF (invalid file signature)',
+      'File does not appear to be a valid PDF (invalid signature)',
       Severity.CRITICAL,
       { filename }
     );
