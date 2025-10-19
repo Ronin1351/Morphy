@@ -1,24 +1,25 @@
 {
+  "version": 2,
+  "name": "morphy",
+  "buildCommand": "npm run build",
+  "framework": null,
+  "public": true,
   "functions": {
-    "api/convert.js": {
-      "maxDuration": 300,
-      "memory": 1024
-    },
-    "api/status.js": {
-      "maxDuration": 10
-    },
-    "api/download.js": {
+    "api/**/*.js": {
+      "memory": 1024,
       "maxDuration": 60
     }
   },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
-        {
-          "key": "Access-Control-Allow-Credentials",
-          "value": "true"
-        },
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
@@ -29,9 +30,44 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
+          "value": "Content-Type, Authorization, X-Requested-With"
+        },
+        {
+          "key": "Access-Control-Max-Age",
+          "value": "86400"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
         }
       ]
     }
-  ]
+  ],
+  "redirects": [
+    {
+      "source": "/index",
+      "destination": "/",
+      "permanent": true
+    }
+  ],
+  "trailingSlash": false,
+  "cleanUrls": true,
+  "env": {
+    "MAX_FILE_SIZE_MB": "50",
+    "FILE_RETENTION_HOURS": "24",
+    "NODE_ENV": "production"
+  }
 }
