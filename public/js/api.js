@@ -1,14 +1,22 @@
 /**
- * API Client - Frontend interface to backend API
+ * API Client - FIXED VERSION with comprehensive error handling
  * Handles all HTTP requests to serverless functions
- * 
- * @module api
  */
 
 // Configuration
 const API_BASE_URL = process.env.API_BASE_URL || '/api';
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-const POLL_INTERVAL = 2000; // 2 seconds for status polling
+const DEFAULT_TIMEOUT = 60000; // Increased to 60 seconds
+const POLL_INTERVAL = 2000;
+const DEBUG = true; // Enable debugging
+
+/**
+ * Debug logger
+ */
+function debugLog(message, data = null) {
+  if (DEBUG) {
+    console.log(`[API] ${new Date().toISOString()} - ${message}`, data || '');
+  }
+}
 
 /**
  * API Client class
@@ -19,17 +27,15 @@ class APIClient {
     this.defaultHeaders = {
       'Accept': 'application/json',
     };
+    debugLog('APIClient initialized', { baseURL });
   }
 
   /**
-   * Make HTTP request
-   * 
-   * @param {string} endpoint - API endpoint
-   * @param {Object} options - Fetch options
-   * @returns {Promise<Object>}
+   * Make HTTP request with enhanced error handling
    */
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    debugLog('Making request', { url, method: options.method || 'GET' });
     
     const config = {
       ...options,
@@ -41,16 +47,30 @@ class APIClient {
 
     // Add timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), options.timeout || DEFAULT_TIMEOUT);
+    const timeoutId = setTimeout(
+      () => {
+        debugLog('Request timeout', { url, timeout: options.timeout || DEFAULT_TIMEOUT });
+        controller.abort();
+      },
+      options.timeout || DEFAULT_TIMEOUT
+    );
     config.signal = controller.signal;
 
     try {
+      debugLog('Fetching...', { url });
       const response = await fetch(url, config);
       clearTimeout(timeoutId);
+
+      debugLog('Response received', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers.get('content-type'),
+      });
 
       // Handle non-JSON responses (like file downloads)
       const contentType = response.headers.get('content-type');
       if (contentType && !contentType.includes('application/json')) {
+        debugLog('Non-JSON response, returning blob');
         return {
           ok: response.ok,
           status: response.status,
@@ -60,13 +80,50 @@ class APIClient {
       }
 
       // Parse JSON response
-      const data = await response.json();
+      let data;
+      try {
+        const text = await response.text();
+        debugLog('Response text length', { length: text.length });
+        
+        if (!text) {
+          throw new Error('Empty response body');
+        }
+        
+        data = JSON.parse(text);
+        debugLog('JSON parsed successfully', {
+          success: data.success,
+          hasError: !!data.error,
+        });
+      } catch (parseError) {
+        debugLog('ERROR: JSON parse failed', {
+          error: parseError.message,
+          status: response.status,
+        });
+        
+        throw new APIError(
+          'Invalid JSON response from server',
+          response.status,
+          'PARSE_ERROR',
+          { parseError: parseError.message }
+        );
+      }
 
       if (!response.ok) {
+        const errorMessage = data.error?.message || data.message || 'Request failed';
+        const errorCode = data.error?.code || 'REQUEST_FAILED';
+        const errorDetails = data.error?.details || data.details;
+        
+        debugLog('ERROR: Request failed', {
+          status: response.status,
+          code: errorCode,
+          message: errorMessage,
+          details: errorDetails,
+        });
+
         throw new APIError(
-          data.error?.message || 'Request failed',
+          errorMessage,
           response.status,
-          data.error?.code,
+          errorCode,
           data
         );
       }
@@ -77,37 +134,35 @@ class APIClient {
       clearTimeout(timeoutId);
 
       if (error.name === 'AbortError') {
-        throw new APIError('Request timeout', 408, 'TIMEOUT');
+        debugLog('ERROR: Request aborted (timeout)');
+        throw new APIError('Request timeout - server took too long to respond', 408, 'TIMEOUT');
       }
 
       if (error instanceof APIError) {
         throw error;
       }
 
+      // Network error or other fetch error
+      debugLog('ERROR: Network or fetch error', {
+        name: error.name,
+        message: error.message,
+      });
+
       throw new APIError(
-        error.message || 'Network error',
+        error.message || 'Network error - please check your connection',
         0,
-        'NETWORK_ERROR'
+        'NETWORK_ERROR',
+        { originalError: error.message }
       );
     }
   }
 
   /**
-   * GET request
-   */
-  async get(endpoint, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
-    const url = queryString ? `${endpoint}?${queryString}` : endpoint;
-    
-    return this.request(url, {
-      method: 'GET',
-    });
-  }
-
-  /**
-   * POST request
+   * POST request with enhanced logging
    */
   async post(endpoint, body, options = {}) {
+    debugLog('POST request', { endpoint });
+    
     const config = {
       method: 'POST',
       ...options,
@@ -116,6 +171,10 @@ class APIClient {
     // Handle FormData (for file uploads)
     if (body instanceof FormData) {
       config.body = body;
+      debugLog('Sending FormData', {
+        hasFile: body.has('file'),
+        keys: Array.from(body.keys()),
+      });
       // Don't set Content-Type for FormData, let browser set it with boundary
     } else {
       config.headers = {
@@ -123,20 +182,40 @@ class APIClient {
         ...options.headers,
       };
       config.body = JSON.stringify(body);
+      debugLog('Sending JSON body');
     }
 
     return this.request(endpoint, config);
   }
 
   /**
-   * Convert PDF to Excel
-   * 
-   * @param {File} file - PDF file
-   * @param {Object} options - Conversion options
-   * @param {Function} onProgress - Progress callback
-   * @returns {Promise<Object>}
+   * Convert PDF to Excel with progress tracking
    */
   async convertFile(file, options = {}, onProgress = null) {
+    debugLog('convertFile called', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      options,
+    });
+
+    // Validate file before upload
+    const validation = this.validateFile(file);
+    if (!validation.valid) {
+      debugLog('ERROR: File validation failed', validation.errors);
+      const error = new APIError(
+        validation.errors[0]?.message || 'File validation failed',
+        400,
+        validation.errors[0]?.code || 'VALIDATION_ERROR',
+        { validation }
+      );
+      throw error;
+    }
+
+    if (validation.warnings.length > 0) {
+      debugLog('File validation warnings', validation.warnings);
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     
@@ -157,228 +236,132 @@ class APIClient {
       formData.append('validate_only', 'true');
     }
 
+    debugLog('FormData prepared', {
+      bankFormat: options.bankFormat,
+      format: options.format,
+    });
+
     // Upload with progress tracking
     if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+      debugLog('Using XMLHttpRequest for progress tracking');
       return this.uploadWithProgress('/convert', formData, onProgress);
     }
 
-    return this.post('/convert', formData);
+    debugLog('Using fetch (no progress tracking)');
+    return this.post('/convert', formData, { timeout: 120000 }); // 2 minute timeout for conversion
   }
 
   /**
    * Upload file with progress tracking using XMLHttpRequest
-   * 
-   * @param {string} endpoint - API endpoint
-   * @param {FormData} formData - Form data with file
-   * @param {Function} onProgress - Progress callback
-   * @returns {Promise<Object>}
    */
   uploadWithProgress(endpoint, formData, onProgress) {
     return new Promise((resolve, reject) => {
+      debugLog('Starting upload with progress tracking', { endpoint });
       const xhr = new XMLHttpRequest();
 
       // Progress tracking
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
           const percentComplete = (e.loaded / e.total) * 100;
+          debugLog('Upload progress', {
+            loaded: e.loaded,
+            total: e.total,
+            percent: percentComplete.toFixed(2),
+          });
           onProgress(percentComplete);
         }
       });
 
-      // Load (success)
+      // Load (success or error response)
       xhr.addEventListener('load', () => {
+        debugLog('Upload complete', {
+          status: xhr.status,
+          statusText: xhr.statusText,
+        });
+
         try {
           const response = JSON.parse(xhr.responseText);
+          debugLog('Response parsed', { success: response.success });
           
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(response);
           } else {
-            reject(new APIError(
-              response.error?.message || 'Upload failed',
+            const error = new APIError(
+              response.error?.message || response.message || 'Upload failed',
               xhr.status,
-              response.error?.code,
+              response.error?.code || 'UPLOAD_FAILED',
               response
-            ));
+            );
+            debugLog('ERROR: Upload failed with error response', {
+              code: error.code,
+              message: error.message,
+            });
+            reject(error);
           }
-        } catch (error) {
-          reject(new APIError('Invalid response', xhr.status, 'PARSE_ERROR'));
+        } catch (parseError) {
+          debugLog('ERROR: Failed to parse response', {
+            error: parseError.message,
+            responseText: xhr.responseText.substring(0, 200),
+          });
+          
+          reject(new APIError(
+            'Invalid response from server',
+            xhr.status,
+            'PARSE_ERROR',
+            { parseError: parseError.message }
+          ));
         }
       });
 
-      // Error
+      // Network error
       xhr.addEventListener('error', () => {
-        reject(new APIError('Upload failed', 0, 'NETWORK_ERROR'));
+        debugLog('ERROR: Network error during upload');
+        reject(new APIError(
+          'Network error during upload - please check your connection',
+          0,
+          'NETWORK_ERROR'
+        ));
       });
 
-      // Abort
+      // Upload aborted
       xhr.addEventListener('abort', () => {
-        reject(new APIError('Upload cancelled', 0, 'CANCELLED'));
+        debugLog('Upload aborted');
+        reject(new APIError('Upload cancelled by user', 0, 'CANCELLED'));
+      });
+
+      // Timeout
+      xhr.addEventListener('timeout', () => {
+        debugLog('ERROR: Upload timeout');
+        reject(new APIError('Upload timeout - server took too long to respond', 408, 'TIMEOUT'));
       });
 
       // Send request
-      xhr.open('POST', `${this.baseURL}${endpoint}`);
+      const url = `${this.baseURL}${endpoint}`;
+      debugLog('Opening XHR connection', { url });
+      xhr.open('POST', url);
+      xhr.timeout = 120000; // 2 minute timeout
       xhr.send(formData);
     });
   }
 
   /**
-   * Get processing status
-   * 
-   * @param {string} processingId - Processing ID
-   * @returns {Promise<Object>}
-   */
-  async getStatus(processingId) {
-    return this.get(`/status/${processingId}`);
-  }
-
-  /**
-   * Poll for status until complete
-   * 
-   * @param {string} processingId - Processing ID
-   * @param {Function} onUpdate - Status update callback
-   * @param {number} maxAttempts - Maximum polling attempts (default: 60)
-   * @returns {Promise<Object>}
-   */
-  async pollStatus(processingId, onUpdate = null, maxAttempts = 60) {
-    let attempts = 0;
-
-    while (attempts < maxAttempts) {
-      try {
-        const status = await this.getStatus(processingId);
-
-        if (onUpdate) {
-          onUpdate(status);
-        }
-
-        // Check if processing is complete
-        if (status.status === 'completed' || status.status === 'error') {
-          return status;
-        }
-
-        // Wait before next poll
-        await this.sleep(POLL_INTERVAL);
-        attempts++;
-
-      } catch (error) {
-        // If status not found, it might be too early, try again
-        if (error.statusCode === 404 && attempts < 5) {
-          await this.sleep(POLL_INTERVAL);
-          attempts++;
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    throw new APIError('Polling timeout', 408, 'TIMEOUT');
-  }
-
-  /**
-   * Download converted file
-   * 
-   * @param {string} processingId - Processing ID
-   * @param {string} method - Download method ('stream' or 'redirect')
-   * @returns {Promise<Blob>}
-   */
-  async downloadFile(processingId, method = 'stream') {
-    const endpoint = method === 'redirect' 
-      ? `/download/${processingId}?method=redirect`
-      : `/download/${processingId}`;
-
-    if (method === 'redirect') {
-      // For redirect method, just return the URL
-      return `${this.baseURL}${endpoint}`;
-    }
-
-    // For stream method, fetch and return blob
-    const response = await this.request(endpoint, {
-      method: 'GET',
-    });
-
-    return response.data; // Returns blob
-  }
-
-  /**
-   * Trigger file download in browser
-   * 
-   * @param {string} processingId - Processing ID
-   * @param {string} filename - Filename for download
-   */
-  async triggerDownload(processingId, filename = 'statement.xlsx') {
-    try {
-      const blob = await this.downloadFile(processingId, 'stream');
-      
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-    } catch (error) {
-      console.error('Download failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get supported banks
-   * 
-   * @param {Object} filters - Filter options
-   * @returns {Promise<Object>}
-   */
-  async getBanks(filters = {}) {
-    return this.get('/banks', filters);
-  }
-
-  /**
-   * Get specific bank details
-   * 
-   * @param {string} bankId - Bank ID
-   * @returns {Promise<Object>}
-   */
-  async getBank(bankId) {
-    return this.get('/banks', { id: bankId });
-  }
-
-  /**
-   * Search banks
-   * 
-   * @param {string} query - Search query
-   * @returns {Promise<Object>}
-   */
-  async searchBanks(query) {
-    return this.get('/banks', { search: query });
-  }
-
-  /**
-   * Get banks by country
-   * 
-   * @param {string} countryCode - Country code (e.g., 'US', 'PH')
-   * @returns {Promise<Object>}
-   */
-  async getBanksByCountry(countryCode) {
-    return this.get('/banks', { country: countryCode });
-  }
-
-  /**
    * Validate file before upload
-   * 
-   * @param {File} file - File to validate
-   * @returns {Object}
    */
   validateFile(file) {
+    debugLog('Validating file', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    });
+
     const errors = [];
     const warnings = [];
 
     // Check file type
-    if (!file.type.includes('pdf')) {
+    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
       errors.push({
         code: 'INVALID_FILE_TYPE',
-        message: 'Only PDF files are supported',
+        message: `Invalid file type: "${file.type}". Only PDF files are supported.`,
       });
     }
 
@@ -387,7 +370,7 @@ class APIClient {
     if (file.size > maxSize) {
       errors.push({
         code: 'FILE_TOO_LARGE',
-        message: `File size (${this.formatFileSize(file.size)}) exceeds maximum (50MB)`,
+        message: `File size (${this.formatFileSize(file.size)}) exceeds maximum allowed size (50MB)`,
       });
     }
 
@@ -395,27 +378,30 @@ class APIClient {
     if (file.size === 0) {
       errors.push({
         code: 'EMPTY_FILE',
-        message: 'File is empty',
+        message: 'File is empty (0 bytes)',
       });
     }
 
     // Warn if file is very large
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024 && file.size <= maxSize) {
       warnings.push({
         code: 'LARGE_FILE',
-        message: 'Large file may take longer to process',
+        message: 'Large file may take longer to process (>10MB)',
       });
     }
 
-    return {
+    const result = {
       valid: errors.length === 0,
       errors,
       warnings,
     };
+
+    debugLog('Validation result', result);
+    return result;
   }
 
   /**
-   * Helper: Format file size
+   * Format file size for display
    */
   formatFileSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
@@ -424,7 +410,7 @@ class APIClient {
   }
 
   /**
-   * Helper: Sleep utility
+   * Sleep utility
    */
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -432,7 +418,7 @@ class APIClient {
 }
 
 /**
- * Custom API Error class
+ * Custom API Error class with detailed information
  */
 class APIError extends Error {
   constructor(message, statusCode, code, details = null) {
@@ -441,6 +427,15 @@ class APIError extends Error {
     this.statusCode = statusCode;
     this.code = code;
     this.details = details;
+    this.timestamp = new Date().toISOString();
+    
+    // Log error details
+    debugLog('APIError created', {
+      code,
+      statusCode,
+      message,
+      hasDetails: !!details,
+    });
   }
 
   toJSON() {
@@ -450,7 +445,28 @@ class APIError extends Error {
       statusCode: this.statusCode,
       code: this.code,
       details: this.details,
+      timestamp: this.timestamp,
     };
+  }
+
+  /**
+   * Get user-friendly error message
+   */
+  getUserMessage() {
+    // Map technical errors to user-friendly messages
+    const userMessages = {
+      'NO_FILE_PROVIDED': 'Please select a PDF file to upload.',
+      'INVALID_FILE_TYPE': 'Only PDF files are supported. Please select a PDF file.',
+      'FILE_TOO_LARGE': 'File is too large. Maximum size is 50MB.',
+      'EMPTY_FILE': 'The selected file is empty. Please choose a valid PDF.',
+      'TIMEOUT': 'Request timed out. Please try again.',
+      'NETWORK_ERROR': 'Network error. Please check your connection and try again.',
+      'PARSE_ERROR': 'Server response error. Please try again.',
+      'UPLOAD_FAILED': 'Upload failed. Please try again.',
+      'PROCESSING_FAILED': 'Processing failed. Please check the file and try again.',
+    };
+
+    return userMessages[this.code] || this.message || 'An unexpected error occurred.';
   }
 }
 
@@ -461,30 +477,13 @@ const apiClient = new APIClient();
 export { APIClient, APIError };
 export default apiClient;
 
-// Export convenience methods
-export const convertFile = (file, options, onProgress) => 
-  apiClient.convertFile(file, options, onProgress);
+// Export convenience methods with logging
+export const convertFile = (file, options, onProgress) => {
+  debugLog('convertFile wrapper called');
+  return apiClient.convertFile(file, options, onProgress);
+};
 
-export const getStatus = (processingId) => 
-  apiClient.getStatus(processingId);
-
-export const pollStatus = (processingId, onUpdate, maxAttempts) => 
-  apiClient.pollStatus(processingId, onUpdate, maxAttempts);
-
-export const downloadFile = (processingId, method) => 
-  apiClient.downloadFile(processingId, method);
-
-export const triggerDownload = (processingId, filename) => 
-  apiClient.triggerDownload(processingId, filename);
-
-export const getBanks = (filters) => 
-  apiClient.getBanks(filters);
-
-export const getBank = (bankId) => 
-  apiClient.getBank(bankId);
-
-export const searchBanks = (query) => 
-  apiClient.searchBanks(query);
-
-export const validateFile = (file) => 
-  apiClient.validateFile(file);
+export const validateFile = (file) => {
+  debugLog('validateFile wrapper called');
+  return apiClient.validateFile(file);
+};
