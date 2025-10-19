@@ -84,6 +84,7 @@ export default async function handler(req, res) {
     await storeProcessingResult(processingId, processingResult);
 
     // Return immediate response with processing ID
+	const fileBuffer = await readFileBuffer(file);
     res.status(202).json({
       success: true,
       processingId,
@@ -94,9 +95,8 @@ export default async function handler(req, res) {
     });
 
     // Continue processing asynchronously
-    processFileAsync(processingId, file, options, startTime).catch(error => {
-      console.error('Async processing error:', error);
-    });
+    await processFileAsync(processingId, fileBuffer, file.originalFilename, options, startTime);
+    
 
   } catch (error) {
     console.error('Request handling error:', error);
@@ -140,13 +140,13 @@ async function parseFormData(req) {
 /**
  * Process file asynchronously
  */
-async function processFileAsync(processingId, file, options, startTime) {
+async function processFileAsync(processingId, fileBuffer, originalFilename, options, startTime) {
   const result = {
     processingId,
     status: 'processing',
     progress: 0,
     startedAt: new Date(startTime).toISOString(),
-    sourceFile: file.originalFilename,
+    sourceFile: originalFilename,
     steps: [],
     errors: [],
     warnings: [],
@@ -154,12 +154,12 @@ async function processFileAsync(processingId, file, options, startTime) {
 
   try {
     // Step 1: Read file
-    updateProgress(processingId, result, 10, 'Reading file...');
-    const fileBuffer = await readFileBuffer(file);
+    // updateProgress(processingId, result, 10, 'Reading file...');
+    // const fileBuffer = await readFileBuffer(file);
 
     // Step 2: Validate file
-    updateProgress(processingId, result, 20, 'Validating file...');
-    const validation = validateFile(fileBuffer, file.originalFilename, file.mimetype);
+    updateProgress(processingId, result, 10, 'Validating file...');
+	const validation = validateFile(fileBuffer, originalFilename, 'application/pdf');
     
     if (!validation.valid) {
       result.status = 'error';
@@ -176,8 +176,8 @@ async function processFileAsync(processingId, file, options, startTime) {
     });
 
     // Step 3: Upload to storage
-    updateProgress(processingId, result, 30, 'Uploading file...');
-    const uploadResult = await uploadFile(fileBuffer, file.originalFilename);
+    updateProgress(processingId, result, 20, 'Uploading file...');
+	const uploadResult = await uploadFile(fileBuffer, originalFilename);
     result.fileId = uploadResult.fileId;
 
     result.steps.push({
@@ -255,10 +255,10 @@ async function processFileAsync(processingId, file, options, startTime) {
     updateProgress(processingId, result, 80, 'Generating Excel file...');
     const excelResult = await generateOutput(extractionResult, {
       format: options.format,
-      filename: file.originalFilename.replace(/\.pdf$/i, `.${options.format}`),
+      filename: originalFilename.replace(/\.pdf$/i, `.${options.format}`),
       includeSummary: options.includeSummary,
       includeLog: options.includeLog,
-      sourceFilename: file.originalFilename,
+      sourceFilename: originalFilename,
     });
 
     if (!excelResult.success) {
