@@ -17,7 +17,7 @@ const USE_BLOB_STORAGE = process.env.NODE_ENV === 'production' || process.env.FO
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), '.tmp-storage');
 
 // In-memory cache for processing results
-const processingCache = new Map();
+import { kv } from '@vercel/kv';
 
 /**
  * Initialize local storage directory for development
@@ -61,14 +61,14 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       });
 
       // Store metadata
-      processingCache.set(fileId, {
+      await kv.set(`file_${fileId}`, {
         fileId,
         url: blob.url,
         filename: originalFilename,
         size: fileBuffer.length,
         uploadedAt: timestamp,
         expiresAt: timestamp + FILE_RETENTION_MS,
-      });
+      }, { ex: Math.floor(FILE_RETENTION_MS / 1000) });
 
       return {
         fileId,
@@ -97,7 +97,9 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
         localPath: filePath,
       };
 
-      processingCache.set(fileId, metadata);
+      await kv.set(`file_${fileId}`, metadata, { 
+		ex: Math.floor(FILE_RETENTION_MS / 1000) 
+		});
 
       return {
         fileId,
@@ -119,7 +121,7 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
  * @throws {Error} If file not found or retrieval fails
  */
 export async function getFile(fileId) {
-  const metadata = processingCache.get(fileId);
+  const metadata = await kv.get(`file_${fileId}`);
 
   if (!metadata) {
     throw new Error('File not found or expired');
@@ -161,7 +163,7 @@ export async function getFile(fileId) {
  * @returns {Promise<boolean>} Success status
  */
 export async function deleteFile(fileId) {
-  const metadata = processingCache.get(fileId);
+  const metadata = await kv.get(`file_${fileId}`);
 
   if (!metadata) {
     return false;
@@ -183,7 +185,7 @@ export async function deleteFile(fileId) {
   }
 
   // Remove from cache
-  processingCache.delete(fileId);
+  await kv.del(`file_${fileId}`);
   return true;
 }
 
@@ -195,7 +197,7 @@ export async function deleteFile(fileId) {
  * @throws {Error} If file not found
  */
 export async function getDownloadUrl(fileId) {
-  const metadata = processingCache.get(fileId);
+  const metadata = await kv.get(`file_${fileId}`);
 
   if (!metadata) {
     throw new Error('File not found');
@@ -217,11 +219,11 @@ export async function getDownloadUrl(fileId) {
  * @returns {Promise<void>}
  */
 export async function storeProcessingResult(processingId, data) {
-  processingCache.set(`result_${processingId}`, {
+  await kv.set(`result_${processingId}`,{
     ...data,
     storedAt: Date.now(),
     expiresAt: Date.now() + FILE_RETENTION_MS,
-  });
+  }, { ex: Math.floor(FILE_RETENTION_MS / 1000) });
 }
 
 /**
@@ -231,7 +233,7 @@ export async function storeProcessingResult(processingId, data) {
  * @returns {Promise<Object|null>} Processing result or null if not found
  */
 export async function getProcessingResult(processingId) {
-  const result = processingCache.get(`result_${processingId}`);
+  const result = await kv.get(`result_${processingId}`);
 
   if (!result) {
     return null;
@@ -239,7 +241,7 @@ export async function getProcessingResult(processingId) {
 
   // Check expiration
   if (Date.now() > result.expiresAt) {
-    processingCache.delete(`result_${processingId}`);
+    await kv.del(`result_${processingId}`);
     return null;
   }
 
@@ -252,8 +254,8 @@ export async function getProcessingResult(processingId) {
  * @param {string} fileId - Unique file identifier
  * @returns {Object|null} File metadata or null if not found
  */
-export function getFileMetadata(fileId) {
-  return processingCache.get(fileId) || null;
+export async function getFileMetadata(fileId) {
+  return (await kv.get(`file_${fileId}`)) || null;
 }
 
 /**
@@ -261,7 +263,7 @@ export function getFileMetadata(fileId) {
  * Called periodically to free up storage
  * 
  * @returns {Promise<number>} Number of items cleaned up
- */
+ *
 export async function cleanupExpired() {
   const now = Date.now();
   let cleanedCount = 0;
@@ -278,6 +280,11 @@ export async function cleanupExpired() {
   }
 
   return cleanedCount;
+}*/
+export async function cleanupExpired() {
+  // KV handles expiration automatically with 'ex' parameter
+  console.log('KV handles expiration automatically');
+  return 0;
 }
 
 /**
@@ -297,7 +304,7 @@ function sanitizeFilename(filename) {
  * Get storage statistics
  * 
  * @returns {Object} Storage stats
- */
+ *
 export function getStorageStats() {
   const files = [];
   const results = [];
@@ -308,8 +315,16 @@ export function getStorageStats() {
     } else {
       files.push(metadata);
     }
-  }
-
+  }*/
+	export function getStorageStats() {
+	  return {
+		totalFiles: 'N/A',
+		totalResults: 'N/A',
+		totalSize: 'N/A',
+		storageType: USE_BLOB_STORAGE ? 'vercel-blob' : 'local-filesystem',
+		note: 'Statistics not available with KV storage'
+	  };
+	}
   return {
     totalFiles: files.length,
     totalResults: results.length,
