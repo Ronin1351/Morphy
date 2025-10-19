@@ -126,13 +126,19 @@ export default async function handler(req, res) {
 
     filePath = file.filepath;
 
-    // Validate file
+    // Read file buffer FIRST (before validation)
+    debugLog(processingId, 'Reading file buffer...');
+    const fileBuffer = await fs.readFile(filePath);
+    
+    if (!fileBuffer || fileBuffer.length === 0) {
+      throw new Error('File is empty or could not be read');
+    }
+
+    debugLog(processingId, 'File buffer read successfully', { size: fileBuffer.length });
+
+    // Validate file with correct parameters
     debugLog(processingId, 'Validating file...');
-    const validation = validateFile({
-      name: file.originalFilename,
-      type: file.mimetype,
-      size: file.size
-    });
+    const validation = validateFile(fileBuffer, file.originalFilename, file.mimetype);
 
     if (!validation.valid) {
       debugLog(processingId, 'File validation failed', { errors: validation.errors });
@@ -143,16 +149,6 @@ export default async function handler(req, res) {
     if (validation.warnings.length > 0) {
       debugLog(processingId, 'Validation warnings', { warnings: validation.warnings });
     }
-
-    // Read file buffer
-    debugLog(processingId, 'Reading file buffer...');
-    const fileBuffer = await fs.readFile(filePath);
-    
-    if (!fileBuffer || fileBuffer.length === 0) {
-      throw new Error('File is empty or could not be read');
-    }
-
-    debugLog(processingId, 'File buffer read successfully', { size: fileBuffer.length });
 
     // Upload to storage
     debugLog(processingId, 'Uploading to storage...');
