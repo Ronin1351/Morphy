@@ -1,17 +1,4 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    }
-  ],
   "functions": {
     "api/convert.js": {
       "maxDuration": 300,
@@ -24,14 +11,14 @@
       "maxDuration": 60
     }
   },
-  "env": {
-    "NODE_ENV": "production",
-    "DEBUG": "true"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
       "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
