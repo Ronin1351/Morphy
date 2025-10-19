@@ -1,127 +1,255 @@
 <!doctype html>
+
 <html lang="en">
+
 <head>
+
   <meta charset="utf-8" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <title>SnapConvert — PDF to Excel</title>
+
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+
   <link rel="stylesheet" href="./css/styles.css">
+
 </head>
+
 <body data-theme="auto">
+
   <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" style="display:none">
+
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 3l4 4h-3v6h-2V7H8l4-4zM4 17a4 4 0 004 4h8a4 4 0 004-4c0-1.86-1.28-3.43-3-3.87V11a6 6 0 10-12 0v2.13A4.002 4.002 0 004 17z"/></symbol>
+
     <symbol id="i-sun" viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.95 19.07l1.41 1.41 1.8-1.79-1.42-1.42-1.79 1.8zM20 11v2h3v-2h-3zm-2.34-7.95l-1.42 1.42 1.8 1.79 1.41-1.41-1.79-1.8zM12 5a7 7 0 100 14A7 7 0 0012 5zm5.66 14.07l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4z"/></symbol>
+
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></symbol>
+
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M18.3 5.7l-1.4-1.4L12 9.2 7.1 4.3 5.7 5.7 10.6 10.6 5.7 15.5l1.4 1.4L12 12 16.9 16.9l1.4-1.4-4.9-4.9z"/></symbol>
+
   </svg>
 
+
+
   <header class="header container">
+
     <div class="brand">
+
       <img src="./assets/logo.svg" width="28" height="28" alt="" />
+
       <span class="title">SnapConvert</span>
+
     </div>
+
     <nav class="nav">
+
       <a class="link" href="#security">Security</a>
+
       <a class="link" href="#help">Help</a>
+
     </nav>
+
     <div class="actions">
+
       <button id="themeBtn" class="btn ghost" aria-label="Toggle theme">
+
         <svg class="icon" id="themeIcon"><use href="#i-moon"/></svg><span class="hide-sm">Theme</span>
+
       </button>
+
       <a href="#get-started" class="btn primary">New Conversion</a>
+
     </div>
+
   </header>
 
+
+
   <main class="container">
+
     <section class="hero clay" id="get-started">
+
       <div class="hero__text">
+
         <h1>Convert bank/tax PDFs to Excel</h1>
+
         <p class="muted">Drag a PDF, choose format, click Convert. Download a clean CSV/XLSX.</p>
+
         <ul class="ticks">
+
           <li>Accurate table capture</li>
+
           <li>No account required</li>
+
           <li>Keyboard-friendly</li>
+
         </ul>
+
       </div>
+
       <form id="convertForm" class="uploader" novalidate aria-label="PDF uploader">
+
         <label id="dropZone" class="drop clay" tabindex="0">
+
           <svg class="icon xl"><use href="#i-upload"/></svg>
+
           <div>
+
             <strong>Drag & drop PDF</strong>
+
             <div class="muted small">or click to browse</div>
+
           </div>
+
           <input id="file" type="file" accept="application/pdf" aria-label="Choose PDF" />
+
         </label>
 
+
+
         <div class="row">
+
           <label class="field">
+
             <span>Output</span>
+
             <select id="format" class="control">
+
               <option value="csv">CSV</option>
+
               <option value="xlsx">Excel (.xlsx)</option>
+
             </select>
+
           </label>
+
           <button id="convertBtn" class="btn primary" type="submit">Convert</button>
+
         </div>
+
         <p class="muted small">Max 10 MB. Demo uses sample rows.</p>
+
       </form>
+
     </section>
+
+
 
     <section class="grid three">
+
       <article class="clay card" id="security">
+
         <h3>Private by default</h3>
+
         <p>Files stay local in this demo. No uploads.</p>
+
       </article>
+
+
 
       <article class="clay card">
+
         <h3>Recent conversions</h3>
+
         <div class="table-wrap">
+
           <table class="table" aria-label="Recent items" data-sortable>
+
             <thead><tr>
+
               <th data-key="name">File</th>
+
               <th data-key="rows">Rows</th>
+
               <th data-key="format">Format</th>
+
               <th data-key="time">Time</th>
+
             </tr></thead>
+
             <tbody id="recentBody"></tbody>
+
           </table>
+
         </div>
+
       </article>
 
+
+
       <aside class="clay card" id="help">
+
         <h3>Brand & theme</h3>
+
         <div class="stack-col">
+
           <label class="field">
+
             <span>Accent</span>
+
             <input id="accentPicker" type="color" class="control" value="#FFAA2A" />
+
           </label>
+
           <div class="swatches" aria-label="Preset palette">
+
             <button class="swatch" data-hex="#FFAA2A" title="#FFAA2A"></button>
+
             <button class="swatch" data-hex="#F8D091" title="#F8D091"></button>
+
             <button class="swatch" data-hex="#FFFFFF" title="#FFFFFF"></button>
+
             <button class="swatch" data-hex="#CFF1F1" title="#CFF1F1"></button>
+
             <button class="swatch" data-hex="#58C7C5" title="#58C7C5"></button>
+
           </div>
+
           <p class="muted small">Click any swatch to apply. Accent drives buttons and focus.</p>
+
         </div>
+
       </aside>
+
     </section>
+
   </main>
 
+
+
   <footer class="footer container">
+
     <span class="muted small">© 2025 SnapConvert</span>
+
     <nav class="nav"><a class="link" href="#">Terms</a><a class="link" href="#">Privacy</a></nav>
+
   </footer>
 
+
+
   <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle" hidden>
+
     <div class="panel clay" role="document">
+
       <header class="panel__hd"><h3 id="mTitle">Ready to download</h3><button class="btn ghost sm" data-close aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></header>
+
       <div class="panel__bd"><p>Your file is prepared. Save it below.</p></div>
+
       <footer class="panel__ft"><button class="btn" data-close>Close</button><a id="downloadLink" class="btn primary" href="#" download>Download</a></footer>
+
     </div>
+
   </div>
 
+
+
   <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
+
   <script type="module" src="./js/main.js"></script>
+  <script src="./js/diagnostic-panel.js"></script>
+
 </body>
+
 </html>
+
