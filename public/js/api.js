@@ -31,7 +31,7 @@ function errorLog(method, url, error, data = {}) {
  * @param {File} file - File to validate
  * @returns {{valid: boolean, errors: Array, warnings: Array}}
  */
-export function validateFile(file) {
+function validateFile(file) {
   debugLog('VALIDATE', 'File', {
     name: file.name,
     size: file.size,
@@ -101,7 +101,7 @@ export function validateFile(file) {
  * @param {Function} onProgress - Progress callback (0-100)
  * @returns {Promise<{processingId: string}>}
  */
-export async function convertFile(file, options = {}, onProgress = null) {
+async function convertFile(file, options = {}, onProgress = null) {
   debugLog('CONVERT', 'Starting conversion', {
     filename: file.name,
     size: file.size,
@@ -194,7 +194,7 @@ export async function convertFile(file, options = {}, onProgress = null) {
  * @param {number} maxAttempts - Maximum polling attempts
  * @returns {Promise<Object>} Final result
  */
-export async function pollStatus(processingId, onProgress = null, maxAttempts = MAX_POLL_ATTEMPTS) {
+async function pollStatus(processingId, onProgress = null, maxAttempts = MAX_POLL_ATTEMPTS) {
   debugLog('POLL', 'Starting status polling', {
     processingId,
     maxAttempts,
@@ -294,7 +294,7 @@ export async function pollStatus(processingId, onProgress = null, maxAttempts = 
  * @param {string} url - Download URL
  * @param {string} filename - Suggested filename
  */
-export async function downloadFile(url, filename) {
+async function downloadFile(url, filename) {
   debugLog('DOWNLOAD', 'Starting download', { url, filename });
 
   try {
@@ -327,7 +327,7 @@ export async function downloadFile(url, filename) {
  * @param {string} processingId - Processing ID
  * @param {string} filename - Suggested filename
  */
-export async function triggerDownload(processingId, filename = 'statement.xlsx') {
+async function triggerDownload(processingId, filename = 'statement.xlsx') {
   debugLog('TRIGGER_DOWNLOAD', 'Getting download URL', { processingId, filename });
 
   try {
@@ -368,7 +368,7 @@ export async function triggerDownload(processingId, filename = 'statement.xlsx')
  * 
  * @returns {Promise<{banks: Array}>}
  */
-export async function getBanks() {
+async function getBanks() {
   debugLog('GET_BANKS', 'Getting supported banks');
 
   // Return a list of common banks
@@ -415,12 +415,15 @@ const apiClient = {
 };
 
 // Export default and named exports
+// IMPORTANT: Only export each function ONCE (not in function definition)
 export default apiClient;
 
-// Also export individual functions for convenience
 export {
-  apiClient,
+  validateFile,
+  convertFile,
+  pollStatus,
   downloadFile,
   triggerDownload,
   getBanks,
+  apiClient,
 };
