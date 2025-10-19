@@ -321,6 +321,76 @@ export async function downloadFile(url, filename) {
 }
 
 /**
+ * Trigger download for a processed file
+ * Alias for compatibility with main.js
+ * 
+ * @param {string} processingId - Processing ID
+ * @param {string} filename - Suggested filename
+ */
+export async function triggerDownload(processingId, filename = 'statement.xlsx') {
+  debugLog('TRIGGER_DOWNLOAD', 'Getting download URL', { processingId, filename });
+
+  try {
+    // Get the status to find the download URL
+    const response = await fetch(`${API_BASE_URL}/api/status?id=${processingId}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to get download URL');
+    }
+
+    const data = await response.json();
+    
+    if (!data.success || data.status !== 'completed') {
+      throw new Error('File is not ready for download yet');
+    }
+
+    // Use direct download URL if available, otherwise construct it
+    const downloadUrl = data.directDownloadUrl || data.downloadUrl || data.result?.url;
+    
+    if (!downloadUrl) {
+      throw new Error('Download URL not found');
+    }
+
+    debugLog('TRIGGER_DOWNLOAD', 'Download URL found', { downloadUrl });
+
+    // Trigger the download
+    await downloadFile(downloadUrl, filename);
+
+  } catch (error) {
+    errorLog('TRIGGER_DOWNLOAD', 'Failed to trigger download', error, { processingId });
+    throw error;
+  }
+}
+
+/**
+ * Get list of supported banks
+ * Returns hardcoded list for now (can be made dynamic later)
+ * 
+ * @returns {Promise<{banks: Array}>}
+ */
+export async function getBanks() {
+  debugLog('GET_BANKS', 'Getting supported banks');
+
+  // Return a list of common banks
+  // In production, this could call an API endpoint
+  const banks = [
+    { bankId: 'bdo', bankName: 'BDO', country: 'PH' },
+    { bankId: 'bpi', bankName: 'BPI', country: 'PH' },
+    { bankId: 'metrobank', bankName: 'Metrobank', country: 'PH' },
+    { bankId: 'unionbank', bankName: 'UnionBank', country: 'PH' },
+    { bankId: 'security-bank', bankName: 'Security Bank', country: 'PH' },
+    { bankId: 'rcbc', bankName: 'RCBC', country: 'PH' },
+    { bankId: 'pnb', bankName: 'PNB', country: 'PH' },
+    { bankId: 'landbank', bankName: 'Land Bank', country: 'PH' },
+    { bankId: 'generic', bankName: 'Generic PDF', country: 'All' },
+  ];
+
+  debugLog('GET_BANKS', 'Returning banks', { count: banks.length });
+
+  return { banks };
+}
+
+/**
  * Sleep helper
  */
 function sleep(ms) {
@@ -335,6 +405,8 @@ const apiClient = {
   convertFile,
   pollStatus,
   downloadFile,
+  triggerDownload,
+  getBanks,
   
   // Configuration getters
   getBaseUrl: () => API_BASE_URL,
@@ -349,4 +421,6 @@ export default apiClient;
 export {
   apiClient,
   downloadFile,
+  triggerDownload,
+  getBanks,
 };
