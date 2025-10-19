@@ -1,63 +1,39 @@
 /**
  * Storage Utility - File and Data Management
- * FIXED VERSION with comprehensive error handling and debugging
+ * Handles file uploads, retrieval, and cleanup using Vercel Blob Storage
+ * 
+ * @module storage
+ * 
+ * FIXED VERSION with:
+ * - Comprehensive error handling
+ * - Detailed logging for debugging
+ * - Fixed syntax errors (tabs → spaces)
+ * - Validation checks
  */
 
-import { put, del, head } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 import { kv } from '@vercel/kv';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 
 // Configuration
-const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '50') * 1024 * 1024;
-const FILE_RETENTION_MS = parseInt(process.env.FILE_RETENTION_HOURS || '24') * 60 * 60 * 1000;
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '50') * 1024 * 1024; // Default 50MB
+const FILE_RETENTION_MS = parseInt(process.env.FILE_RETENTION_HOURS || '24') * 60 * 60 * 1000; // Default 24h
 const USE_BLOB_STORAGE = process.env.NODE_ENV === 'production' || process.env.FORCE_BLOB === 'true';
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), '.tmp-storage');
-const DEBUG = process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development';
 
-/**
- * Debug logger
- */
-function debugLog(message, data = null) {
-  if (DEBUG) {
-    console.log(`[STORAGE] ${new Date().toISOString()} - ${message}`, data || '');
-  }
+// Debug logging helper
+function debugLog(message, data = {}) {
+  console.log(`[STORAGE ${new Date().toISOString()}]`, message, JSON.stringify(data, null, 2));
 }
 
-/**
- * Check if required environment variables are set
- */
-function checkEnvironment() {
-  const issues = [];
-  
-  if (USE_BLOB_STORAGE) {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      issues.push('BLOB_READ_WRITE_TOKEN not set');
-    }
-  }
-  
-  if (!process.env.KV_REST_API_URL) {
-    issues.push('KV_REST_API_URL not set');
-  }
-  
-  if (!process.env.KV_REST_API_TOKEN) {
-    issues.push('KV_REST_API_TOKEN not set');
-  }
-  
-  if (issues.length > 0) {
-    const message = `Missing environment variables: ${issues.join(', ')}`;
-    debugLog('ERROR: ' + message);
-    console.error('[STORAGE] Configuration Error:', message);
-    return { valid: false, issues };
-  }
-  
-  debugLog('Environment check passed', {
-    useBlobStorage: USE_BLOB_STORAGE,
-    hasKV: !!process.env.KV_REST_API_URL,
+function errorLog(message, error, data = {}) {
+  console.error(`[STORAGE ERROR ${new Date().toISOString()}]`, message, {
+    error: error?.message,
+    stack: error?.stack,
+    ...data
   });
-  
-  return { valid: true, issues: [] };
 }
 
 /**
@@ -69,8 +45,7 @@ async function initLocalStorage() {
       await fs.mkdir(LOCAL_STORAGE_DIR, { recursive: true });
       debugLog('Local storage directory initialized', { path: LOCAL_STORAGE_DIR });
     } catch (error) {
-      debugLog('ERROR: Failed to create local storage directory', error);
-      console.error('[STORAGE] Failed to create local storage directory:', error);
+      errorLog('Failed to create local storage directory', error, { path: LOCAL_STORAGE_DIR });
       throw error;
     }
   }
@@ -86,52 +61,68 @@ async function initLocalStorage() {
  * @throws {Error} If file is too large or upload fails
  */
 export async function uploadFile(fileBuffer, originalFilename, contentType = 'application/pdf') {
-  debugLog('uploadFile called', {
-    fileSize: fileBuffer.length,
-    originalFilename,
+  debugLog('Starting file upload', {
+    filename: originalFilename,
+    size: fileBuffer?.length,
     contentType,
-    useBlob: USE_BLOB_STORAGE,
+    useBlobStorage: USE_BLOB_STORAGE,
+    maxSize: MAX_FILE_SIZE
   });
 
-  // Check environment
-  const envCheck = checkEnvironment();
-  if (!envCheck.valid) {
-    throw new Error(`Storage configuration error: ${envCheck.issues.join(', ')}`);
+  // Validate inputs
+  if (!fileBuffer || !Buffer.isBuffer(fileBuffer)) {
+    const error = new Error('Invalid file buffer provided - must be a Buffer instance');
+    errorLog('Validation failed', error, { receivedType: typeof fileBuffer });
+    throw error;
+  }
+
+  if (!originalFilename || typeof originalFilename !== 'string') {
+    const error = new Error('Invalid filename provided');
+    errorLog('Validation failed', error, { filename: originalFilename });
+    throw error;
   }
 
   // Validate file size
-  if (fileBuffer.length > MAX_FILE_SIZE) {
-    const errorMsg = `File size (${formatBytes(fileBuffer.length)}) exceeds maximum allowed (${formatBytes(MAX_FILE_SIZE)})`;
-    debugLog('ERROR: ' + errorMsg);
-    throw new Error(errorMsg);
+  if (fileBuffer.length === 0) {
+    const error = new Error('File is empty (0 bytes)');
+    errorLog('Validation failed', error);
+    throw error;
   }
 
-  if (fileBuffer.length === 0) {
-    debugLog('ERROR: Empty file buffer');
-    throw new Error('File buffer is empty');
+  if (fileBuffer.length > MAX_FILE_SIZE) {
+    const error = new Error(
+      `File size (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB) exceeds maximum allowed (${MAX_FILE_SIZE / 1024 / 1024}MB)`
+    );
+    errorLog('File size validation failed', error, {
+      actualSize: fileBuffer.length,
+      maxSize: MAX_FILE_SIZE
+    });
+    throw error;
   }
 
   const fileId = randomUUID();
   const filename = `${fileId}-${sanitizeFilename(originalFilename)}`;
   const timestamp = Date.now();
 
+  debugLog('Generated file ID and sanitized filename', { fileId, filename });
+
   if (USE_BLOB_STORAGE) {
     // Production: Use Vercel Blob Storage
-    debugLog('Using Vercel Blob Storage');
-    
     try {
-      debugLog('Uploading to Blob...', { filename, size: fileBuffer.length });
-      
+      debugLog('Uploading to Vercel Blob Storage...', { filename });
+
+      // Check if BLOB_READ_WRITE_TOKEN is configured
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        throw new Error('BLOB_READ_WRITE_TOKEN environment variable is not configured. Please set it in Vercel Dashboard.');
+      }
+
       const blob = await put(filename, fileBuffer, {
         access: 'public',
         contentType,
         addRandomSuffix: false,
       });
 
-      debugLog('Blob upload successful', { 
-        url: blob.url,
-        size: blob.size,
-      });
+      debugLog('Blob upload successful', { url: blob.url, size: fileBuffer.length });
 
       // Store metadata in KV
       const metadata = {
@@ -139,26 +130,26 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
         url: blob.url,
         filename: originalFilename,
         size: fileBuffer.length,
+        contentType,
         uploadedAt: timestamp,
         expiresAt: timestamp + FILE_RETENTION_MS,
-        storageType: 'blob',
       };
 
+      debugLog('Storing metadata in KV...', { fileId });
+
       try {
-        debugLog('Storing metadata in KV...', { fileId });
-        await kv.set(
-          `file_${fileId}`, 
-          metadata,
-          { ex: Math.floor(FILE_RETENTION_MS / 1000) }
-        );
-        debugLog('KV metadata stored successfully');
+        await kv.set(`file_${fileId}`, metadata, {
+          ex: Math.floor(FILE_RETENTION_MS / 1000)
+        });
+        debugLog('Metadata stored successfully in KV', { fileId });
       } catch (kvError) {
-        debugLog('ERROR: Failed to store metadata in KV', kvError);
-        // Try to cleanup blob
+        errorLog('Failed to store metadata in KV', kvError, { fileId, metadata });
+        // Attempt to clean up blob
         try {
           await del(blob.url);
+          debugLog('Cleaned up blob after KV failure', { url: blob.url });
         } catch (delError) {
-          debugLog('ERROR: Failed to cleanup blob after KV error', delError);
+          errorLog('Failed to clean up blob', delError, { url: blob.url });
         }
         throw new Error(`Failed to store file metadata: ${kvError.message}`);
       }
@@ -170,58 +161,50 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       };
 
     } catch (error) {
-      debugLog('ERROR: Blob storage upload failed', {
-        message: error.message,
-        stack: error.stack,
+      errorLog('Blob storage upload failed', error, {
+        filename,
+        size: fileBuffer.length,
+        hasToken: !!process.env.BLOB_READ_WRITE_TOKEN
       });
-      
+
+      // Provide more helpful error message
       if (error.message.includes('BLOB_READ_WRITE_TOKEN')) {
-        throw new Error('Blob storage not configured. Please set BLOB_READ_WRITE_TOKEN environment variable.');
+        throw error;
       }
-      
-      throw new Error(`Failed to upload file to storage: ${error.message}`);
+
+      throw new Error(`Failed to upload file to Blob storage: ${error.message}`);
     }
 
   } else {
     // Development: Use local filesystem
-    debugLog('Using local filesystem storage');
+    debugLog('Using local filesystem storage (development mode)');
+    
     await initLocalStorage();
     const filePath = path.join(LOCAL_STORAGE_DIR, filename);
 
     try {
-      debugLog('Writing file to local storage...', { filePath });
+      debugLog('Writing file to local filesystem', { filePath, size: fileBuffer.length });
+      
       await fs.writeFile(filePath, fileBuffer);
-      debugLog('File written successfully');
 
       const metadata = {
         fileId,
         url: `/tmp/${filename}`,
         filename: originalFilename,
         size: fileBuffer.length,
+        contentType,
         uploadedAt: timestamp,
         expiresAt: timestamp + FILE_RETENTION_MS,
         localPath: filePath,
-        storageType: 'local',
       };
 
-      try {
-        debugLog('Storing metadata in KV...', { fileId });
-        await kv.set(
-          `file_${fileId}`, 
-          metadata,
-          { ex: Math.floor(FILE_RETENTION_MS / 1000) }
-        );
-        debugLog('KV metadata stored successfully');
-      } catch (kvError) {
-        debugLog('ERROR: Failed to store metadata in KV', kvError);
-        // Try to cleanup local file
-        try {
-          await fs.unlink(filePath);
-        } catch (unlinkError) {
-          debugLog('ERROR: Failed to cleanup local file after KV error', unlinkError);
-        }
-        throw new Error(`Failed to store file metadata: ${kvError.message}`);
-      }
+      debugLog('Storing metadata in KV...', { fileId });
+      
+      await kv.set(`file_${fileId}`, metadata, {
+        ex: Math.floor(FILE_RETENTION_MS / 1000)
+      });
+
+      debugLog('Local file saved and metadata stored', { fileId, filePath });
 
       return {
         fileId,
@@ -230,10 +213,18 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       };
 
     } catch (error) {
-      debugLog('ERROR: Local storage upload failed', {
-        message: error.message,
-        stack: error.stack,
+      errorLog('Local storage upload failed', error, {
+        filePath,
+        size: fileBuffer.length
       });
+      
+      // Try to clean up partial file
+      try {
+        await fs.unlink(filePath);
+      } catch (unlinkError) {
+        // Ignore cleanup errors
+      }
+
       throw new Error(`Failed to upload file to local storage: ${error.message}`);
     }
   }
@@ -247,68 +238,69 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
  * @throws {Error} If file not found or retrieval fails
  */
 export async function getFile(fileId) {
-  debugLog('getFile called', { fileId });
+  debugLog('Retrieving file', { fileId });
 
-  try {
-    const metadata = await kv.get(`file_${fileId}`);
-    debugLog('Metadata retrieved from KV', { 
-      found: !!metadata,
-      storageType: metadata?.storageType 
-    });
-
-    if (!metadata) {
-      debugLog('ERROR: File not found in KV', { fileId });
-      throw new Error('File not found or expired');
-    }
-
-    // Check expiration
-    if (Date.now() > metadata.expiresAt) {
-      debugLog('File expired, cleaning up...', { fileId, expiresAt: metadata.expiresAt });
-      await deleteFile(fileId);
-      throw new Error('File has expired');
-    }
-
-    if (USE_BLOB_STORAGE) {
-      // Fetch from Vercel Blob
-      try {
-        debugLog('Fetching from Blob...', { url: metadata.url });
-        const response = await fetch(metadata.url);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch file: ${response.statusText} (${response.status})`);
-        }
-        
-        const buffer = Buffer.from(await response.arrayBuffer());
-        debugLog('File retrieved from Blob', { size: buffer.length });
-        return buffer;
-
-      } catch (error) {
-        debugLog('ERROR: Blob retrieval failed', error);
-        throw new Error(`Failed to retrieve file from storage: ${error.message}`);
-      }
-
-    } else {
-      // Read from local filesystem
-      try {
-        debugLog('Reading from local filesystem...', { path: metadata.localPath });
-        const buffer = await fs.readFile(metadata.localPath);
-        debugLog('File retrieved from local storage', { size: buffer.length });
-        return buffer;
-
-      } catch (error) {
-        debugLog('ERROR: Local file read failed', error);
-        
-        if (error.code === 'ENOENT') {
-          throw new Error('File not found in local storage');
-        }
-        
-        throw new Error(`Failed to read file from local storage: ${error.message}`);
-      }
-    }
-
-  } catch (error) {
-    debugLog('ERROR in getFile', error);
+  if (!fileId || typeof fileId !== 'string') {
+    const error = new Error('Invalid file ID provided');
+    errorLog('Validation failed', error, { fileId });
     throw error;
+  }
+
+  let metadata;
+  try {
+    metadata = await kv.get(`file_${fileId}`);
+  } catch (error) {
+    errorLog('Failed to retrieve metadata from KV', error, { fileId });
+    throw new Error(`Failed to retrieve file metadata: ${error.message}`);
+  }
+
+  if (!metadata) {
+    debugLog('File not found or expired', { fileId });
+    throw new Error('File not found or expired');
+  }
+
+  // Check expiration
+  if (Date.now() > metadata.expiresAt) {
+    debugLog('File has expired', { fileId, expiresAt: new Date(metadata.expiresAt) });
+    await deleteFile(fileId);
+    throw new Error('File has expired');
+  }
+
+  if (USE_BLOB_STORAGE) {
+    // Fetch from Vercel Blob
+    try {
+      debugLog('Fetching from Blob storage', { url: metadata.url });
+      
+      const response = await fetch(metadata.url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      debugLog('File retrieved successfully', { fileId, size: buffer.length });
+      
+      return buffer;
+
+    } catch (error) {
+      errorLog('Blob retrieval failed', error, { fileId, url: metadata.url });
+      throw new Error(`Failed to retrieve file from Blob storage: ${error.message}`);
+    }
+
+  } else {
+    // Read from local filesystem
+    try {
+      debugLog('Reading from local filesystem', { path: metadata.localPath });
+      
+      const buffer = await fs.readFile(metadata.localPath);
+      debugLog('File retrieved successfully', { fileId, size: buffer.length });
+      
+      return buffer;
+
+    } catch (error) {
+      errorLog('Local file read failed', error, { fileId, path: metadata.localPath });
+      throw new Error(`Failed to read file from local storage: ${error.message}`);
+    }
   }
 }
 
@@ -319,51 +311,55 @@ export async function getFile(fileId) {
  * @returns {Promise<boolean>} Success status
  */
 export async function deleteFile(fileId) {
-  debugLog('deleteFile called', { fileId });
+  debugLog('Deleting file', { fileId });
 
+  if (!fileId) {
+    debugLog('No file ID provided for deletion');
+    return false;
+  }
+
+  let metadata;
   try {
-    const metadata = await kv.get(`file_${fileId}`);
-
-    if (!metadata) {
-      debugLog('File metadata not found, nothing to delete', { fileId });
-      return false;
-    }
-
-    if (USE_BLOB_STORAGE) {
-      try {
-        debugLog('Deleting from Blob...', { url: metadata.url });
-        await del(metadata.url);
-        debugLog('Blob deleted successfully');
-      } catch (error) {
-        debugLog('WARNING: Blob deletion failed', error);
-        console.warn('[STORAGE] Blob deletion failed:', error);
-      }
-    } else {
-      // Delete from local filesystem
-      try {
-        debugLog('Deleting from local filesystem...', { path: metadata.localPath });
-        await fs.unlink(metadata.localPath);
-        debugLog('Local file deleted successfully');
-      } catch (error) {
-        debugLog('WARNING: Local file deletion failed', error);
-        console.warn('[STORAGE] Local file deletion failed:', error);
-      }
-    }
-
-    // Remove from KV
-    try {
-      await kv.del(`file_${fileId}`);
-      debugLog('KV metadata deleted successfully');
-    } catch (error) {
-      debugLog('WARNING: KV deletion failed', error);
-      console.warn('[STORAGE] KV deletion failed:', error);
-    }
-
-    return true;
-
+    metadata = await kv.get(`file_${fileId}`);
   } catch (error) {
-    debugLog('ERROR in deleteFile', error);
-    console.error('[STORAGE] Delete file error:', error);
+    errorLog('Failed to get metadata for deletion', error, { fileId });
+    return false;
+  }
+
+  if (!metadata) {
+    debugLog('File metadata not found', { fileId });
+    return false;
+  }
+
+  if (USE_BLOB_STORAGE) {
+    try {
+      debugLog('Deleting from Blob storage', { url: metadata.url });
+      await del(metadata.url);
+      debugLog('Blob deleted successfully', { fileId });
+    } catch (error) {
+      errorLog('Blob deletion failed (non-fatal)', error, { fileId, url: metadata.url });
+      // Continue to delete metadata even if blob deletion fails
+    }
+
+  } else {
+    // Delete from local filesystem
+    try {
+      debugLog('Deleting from local filesystem', { path: metadata.localPath });
+      await fs.unlink(metadata.localPath);
+      debugLog('Local file deleted successfully', { fileId });
+    } catch (error) {
+      errorLog('Local file deletion failed (non-fatal)', error, { fileId, path: metadata.localPath });
+      // Continue to delete metadata even if file deletion fails
+    }
+  }
+
+  // Remove from KV
+  try {
+    await kv.del(`file_${fileId}`);
+    debugLog('Metadata deleted from KV', { fileId });
+    return true;
+  } catch (error) {
+    errorLog('Failed to delete metadata from KV', error, { fileId });
     return false;
   }
 }
@@ -376,22 +372,22 @@ export async function deleteFile(fileId) {
  * @throws {Error} If file not found
  */
 export async function getDownloadUrl(fileId) {
-  debugLog('getDownloadUrl called', { fileId });
+  debugLog('Getting download URL', { fileId });
 
   const metadata = await kv.get(`file_${fileId}`);
 
   if (!metadata) {
-    debugLog('ERROR: File not found', { fileId });
+    debugLog('File not found', { fileId });
     throw new Error('File not found');
   }
 
   if (Date.now() > metadata.expiresAt) {
-    debugLog('File expired', { fileId });
+    debugLog('File expired', { fileId, expiresAt: new Date(metadata.expiresAt) });
     await deleteFile(fileId);
     throw new Error('File has expired');
   }
 
-  debugLog('Download URL retrieved', { url: metadata.url });
+  debugLog('Download URL retrieved', { fileId, url: metadata.url });
   return metadata.url;
 }
 
@@ -403,35 +399,22 @@ export async function getDownloadUrl(fileId) {
  * @returns {Promise<void>}
  */
 export async function storeProcessingResult(processingId, data) {
-  debugLog('storeProcessingResult called', { 
-    processingId,
-    status: data.status,
-    progress: data.progress 
-  });
+  debugLog('Storing processing result', { processingId, dataKeys: Object.keys(data) });
 
   try {
-    const resultData = {
+    const result = {
       ...data,
       storedAt: Date.now(),
       expiresAt: Date.now() + FILE_RETENTION_MS,
     };
 
-    await kv.set(
-      `result_${processingId}`,
-      resultData,
-      { ex: Math.floor(FILE_RETENTION_MS / 1000) }
-    );
+    await kv.set(`result_${processingId}`, result, {
+      ex: Math.floor(FILE_RETENTION_MS / 1000)
+    });
 
-    debugLog('Processing result stored successfully');
-
+    debugLog('Processing result stored successfully', { processingId });
   } catch (error) {
-    debugLog('ERROR: Failed to store processing result', error);
-    console.error('[STORAGE] Failed to store processing result:', error);
-    
-    if (error.message.includes('KV')) {
-      throw new Error('Failed to store processing result: KV storage not configured');
-    }
-    
+    errorLog('Failed to store processing result', error, { processingId });
     throw new Error(`Failed to store processing result: ${error.message}`);
   }
 }
@@ -443,7 +426,7 @@ export async function storeProcessingResult(processingId, data) {
  * @returns {Promise<Object|null>} Processing result or null if not found
  */
 export async function getProcessingResult(processingId) {
-  debugLog('getProcessingResult called', { processingId });
+  debugLog('Retrieving processing result', { processingId });
 
   try {
     const result = await kv.get(`result_${processingId}`);
@@ -460,17 +443,12 @@ export async function getProcessingResult(processingId) {
       return null;
     }
 
-    debugLog('Processing result retrieved', {
-      status: result.status,
-      progress: result.progress
-    });
-
+    debugLog('Processing result retrieved', { processingId, status: result.status });
     return result;
 
   } catch (error) {
-    debugLog('ERROR: Failed to get processing result', error);
-    console.error('[STORAGE] Failed to get processing result:', error);
-    return null;
+    errorLog('Failed to retrieve processing result', error, { processingId });
+    throw new Error(`Failed to retrieve processing result: ${error.message}`);
   }
 }
 
@@ -481,81 +459,80 @@ export async function getProcessingResult(processingId) {
  * @returns {Promise<Object|null>} File metadata or null if not found
  */
 export async function getFileMetadata(fileId) {
-  debugLog('getFileMetadata called', { fileId });
+  debugLog('Retrieving file metadata', { fileId });
 
   try {
     const metadata = await kv.get(`file_${fileId}`);
-    debugLog('File metadata retrieved', { found: !!metadata });
+    
+    if (metadata) {
+      debugLog('Metadata retrieved', { fileId, filename: metadata.filename });
+    } else {
+      debugLog('Metadata not found', { fileId });
+    }
+
     return metadata || null;
+
   } catch (error) {
-    debugLog('ERROR: Failed to get file metadata', error);
-    console.error('[STORAGE] Failed to get file metadata:', error);
+    errorLog('Failed to retrieve file metadata', error, { fileId });
     return null;
   }
 }
 
 /**
  * Cleanup expired files and results
- * KV handles this automatically, but keeping for compatibility
+ * Note: KV handles expiration automatically with 'ex' parameter
+ * 
+ * @returns {Promise<number>} Number of items cleaned up
  */
 export async function cleanupExpired() {
-  debugLog('cleanupExpired called (KV handles this automatically)');
+  debugLog('Cleanup called (KV handles expiration automatically)');
   return 0;
 }
 
 /**
- * Get storage statistics
- */
-export function getStorageStats() {
-  return {
-    totalFiles: 'N/A (KV auto-managed)',
-    totalResults: 'N/A (KV auto-managed)',
-    totalSize: 'N/A',
-    storageType: USE_BLOB_STORAGE ? 'vercel-blob' : 'local-filesystem',
-    kvStorage: 'vercel-kv',
-    debug: DEBUG,
-    environment: {
-      hasBlob Token: !!process.env.BLOB_READ_WRITE_TOKEN,
-      hasKVUrl: !!process.env.KV_REST_API_URL,
-      hasKVToken: !!process.env.KV_REST_API_TOKEN,
-      nodeEnv: process.env.NODE_ENV,
-    },
-  };
-}
-
-/**
  * Sanitize filename to prevent path traversal and invalid characters
+ * 
+ * @param {string} filename - Original filename
+ * @returns {string} Sanitized filename
  */
 function sanitizeFilename(filename) {
-  return filename
+  const sanitized = filename
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .replace(/_{2,}/g, '_')
     .substring(0, 100);
+  
+  debugLog('Filename sanitized', { original: filename, sanitized });
+  return sanitized;
 }
 
 /**
- * Format bytes to human readable
+ * Get storage statistics
+ * 
+ * @returns {Object} Storage stats
  */
-function formatBytes(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+export function getStorageStats() {
+  const stats = {
+    totalFiles: 'N/A',
+    totalResults: 'N/A',
+    totalSize: 'N/A',
+    storageType: USE_BLOB_STORAGE ? 'vercel-blob' : 'local-filesystem',
+    maxFileSize: `${MAX_FILE_SIZE / 1024 / 1024}MB`,
+    retentionTime: `${FILE_RETENTION_MS / (60 * 60 * 1000)}h`,
+    note: 'Statistics not available with KV storage - items tracked via individual lookups'
+  };
+
+  debugLog('Storage stats requested', stats);
+  return stats;
 }
 
 // Initialize on module load
 if (!USE_BLOB_STORAGE) {
-  initLocalStorage().catch((error) => {
-    console.error('[STORAGE] Failed to initialize local storage:', error);
+  initLocalStorage().catch(error => {
+    errorLog('Failed to initialize local storage on module load', error);
   });
 }
 
-// Log configuration on startup
-debugLog('Storage module initialized', {
-  useBlob: USE_BLOB_STORAGE,
-  maxFileSize: formatBytes(MAX_FILE_SIZE),
-  retentionHours: FILE_RETENTION_MS / 1000 / 60 / 60,
-});
-
+// Export default object with all functions
 export default {
   uploadFile,
   getFile,
@@ -566,6 +543,4 @@ export default {
   getFileMetadata,
   cleanupExpired,
   getStorageStats,
-  checkEnvironment,
 };
-// test
