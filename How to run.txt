@@ -1,3 +1,0 @@
-Set-Location "D:\my project\Morphy 3.0\src"
-npx serve -l 3000 .
-Go to http://localhost:3000
