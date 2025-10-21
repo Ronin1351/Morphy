@@ -293,13 +293,24 @@ function extractPages(text, numPages) {
 function detectTables(text) {
   const tables = [];
   const lines = text.split('\n');
+  const MAX_LINES = 10000; // Safety limit
+  const startTime = Date.now();
+  const TIMEOUT_MS = 5000; // 5 second timeout for table detection
 
   let currentTable = null;
   let tableStartIndex = -1;
 
-  for (let i = 0; i < lines.length; i++) {
+  const lineCount = Math.min(lines.length, MAX_LINES);
+
+  for (let i = 0; i < lineCount; i++) {
+    // Timeout protection
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      console.warn(`[PDF-PARSER] Table detection timeout at line ${i}`);
+      break;
+    }
+
     const line = lines[i].trim();
-    
+
     // Skip empty lines
     if (!line) {
       if (currentTable && currentTable.rows.length > 0) {
@@ -309,33 +320,38 @@ function detectTables(text) {
       continue;
     }
 
-    // Detect potential table rows (multiple columns separated by spaces)
-    const columns = line.split(/\s{2,}/).filter(col => col.trim().length > 0);
-    
-    // Heuristic: A table row typically has 3+ columns
-    if (columns.length >= 3) {
-      if (!currentTable) {
-        currentTable = {
-          startLine: i,
-          endLine: i,
-          rows: [],
-          columnCount: columns.length,
-        };
-        tableStartIndex = i;
-      }
+    try {
+      // Detect potential table rows (multiple columns separated by spaces)
+      const columns = line.split(/\s{2,}/).filter(col => col.trim().length > 0);
 
-      currentTable.rows.push({
-        lineNumber: i + 1,
-        columns: columns,
-        rawText: line,
-      });
-      currentTable.endLine = i;
-    } else {
-      // End of table
-      if (currentTable && currentTable.rows.length >= 3) {
-        tables.push(currentTable);
-        currentTable = null;
+      // Heuristic: A table row typically has 3+ columns
+      if (columns.length >= 3) {
+        if (!currentTable) {
+          currentTable = {
+            startLine: i,
+            endLine: i,
+            rows: [],
+            columnCount: columns.length,
+          };
+          tableStartIndex = i;
+        }
+
+        currentTable.rows.push({
+          lineNumber: i + 1,
+          columns: columns,
+          rawText: line,
+        });
+        currentTable.endLine = i;
+      } else {
+        // End of table
+        if (currentTable && currentTable.rows.length >= 3) {
+          tables.push(currentTable);
+          currentTable = null;
+        }
       }
+    } catch (error) {
+      console.error(`[PDF-PARSER] Error detecting table at line ${i}:`, error);
+      // Continue processing other lines
     }
   }
 
@@ -344,6 +360,7 @@ function detectTables(text) {
     tables.push(currentTable);
   }
 
+  console.log(`[PDF-PARSER] Detected ${tables.length} tables in ${Date.now() - startTime}ms`);
   return tables;
 }
 
@@ -549,13 +566,35 @@ export async function searchInPDF(pdfBuffer, pattern) {
     const regex = typeof pattern === 'string' ? new RegExp(pattern, 'gi') : pattern;
     const matches = [];
     let match;
+    let iterationCount = 0;
+    const MAX_MATCHES = 10000; // Prevent infinite loops
+    const startTime = Date.now();
+    const TIMEOUT_MS = 5000; // 5 second timeout
 
     while ((match = regex.exec(text)) !== null) {
+      iterationCount++;
+
+      // Safety checks
+      if (iterationCount > MAX_MATCHES) {
+        console.warn(`[PDF-PARSER] Search stopped after ${MAX_MATCHES} matches`);
+        break;
+      }
+
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.warn(`[PDF-PARSER] Search timeout after ${iterationCount} iterations`);
+        break;
+      }
+
       matches.push({
         match: match[0],
         index: match.index,
         groups: match.slice(1),
       });
+
+      // Prevent infinite loop if regex doesn't advance
+      if (match.index === regex.lastIndex) {
+        regex.lastIndex++;
+      }
     }
 
     return matches;

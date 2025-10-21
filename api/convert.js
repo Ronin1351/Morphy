@@ -269,8 +269,23 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
     });
 
     debugLog(processingId, 'Parsing PDF...');
-    const parsedData = await parsePDF(fileBuffer, options);
-    
+
+    // Add timeout protection to parsing
+    const PARSE_TIMEOUT = parseInt(process.env.PARSE_TIMEOUT_MS || '45000'); // 45 seconds
+    let parsedData;
+
+    try {
+      parsedData = await Promise.race([
+        parsePDF(fileBuffer, options),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('PDF parsing timeout exceeded')), PARSE_TIMEOUT)
+        )
+      ]);
+    } catch (parseError) {
+      errorLog(processingId, 'PDF parsing failed', parseError);
+      throw new Error(`PDF parsing failed: ${parseError.message}`);
+    }
+
     debugLog(processingId, 'PDF parsed successfully', {
       transactionsFound: parsedData.transactions?.length,
       tablesFound: parsedData.tables?.length
