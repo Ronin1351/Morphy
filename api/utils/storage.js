@@ -37,6 +37,104 @@ function errorLog(message, error, data = {}) {
 }
 
 /**
+ * Validate Blob Storage configuration
+ * @returns {boolean} True if properly configured
+ */
+function validateBlobConfig() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return false;
+  }
+  if (process.env.BLOB_READ_WRITE_TOKEN.includes('your_') ||
+      process.env.BLOB_READ_WRITE_TOKEN.includes('xxxxx')) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Validate KV Storage configuration
+ * @returns {boolean} True if properly configured
+ */
+function validateKVConfig() {
+  // KV can work with just the environment variables set by Vercel
+  // but we should check if they're explicitly set in .env.local
+  if (process.env.KV_REST_API_URL || process.env.KV_REST_API_TOKEN) {
+    if ((process.env.KV_REST_API_URL && process.env.KV_REST_API_URL.includes('your-')) ||
+        (process.env.KV_REST_API_TOKEN && process.env.KV_REST_API_TOKEN.includes('your_'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Enhanced error handler for Blob operations
+ * @param {Error} error - The error object
+ * @param {string} operation - The operation that failed (e.g., 'upload', 'delete')
+ * @returns {Error} Enhanced error with helpful message
+ */
+function handleBlobError(error, operation) {
+  let userMessage = `Blob Storage ${operation} failed`;
+  const originalMessage = error.message || '';
+
+  if (originalMessage.includes('401') || originalMessage.includes('Unauthorized')) {
+    userMessage = `Blob Storage authentication failed. Please verify BLOB_READ_WRITE_TOKEN is correct.`;
+    errorLog('Blob auth error', error, { suggestion: 'Check BLOB_READ_WRITE_TOKEN in .env.local' });
+  } else if (originalMessage.includes('403') || originalMessage.includes('Forbidden')) {
+    userMessage = `Blob Storage access denied. Token may lack permissions.`;
+    errorLog('Blob permission error', error, { suggestion: 'Verify token has read-write access' });
+  } else if (originalMessage.includes('404') || originalMessage.includes('Not Found')) {
+    userMessage = `Blob file not found.`;
+    errorLog('Blob not found', error);
+  } else if (originalMessage.includes('network') || originalMessage.includes('ENOTFOUND')) {
+    userMessage = `Network error connecting to Blob Storage.`;
+    errorLog('Blob network error', error, { suggestion: 'Check internet connection' });
+  } else if (!validateBlobConfig()) {
+    userMessage = `BLOB_READ_WRITE_TOKEN is not configured correctly in .env.local`;
+    errorLog('Blob config error', error, { suggestion: 'Set valid BLOB_READ_WRITE_TOKEN' });
+  } else {
+    errorLog('Blob error', error, { operation });
+  }
+
+  const enhancedError = new Error(userMessage);
+  enhancedError.originalError = error;
+  enhancedError.operation = operation;
+  return enhancedError;
+}
+
+/**
+ * Enhanced error handler for KV operations
+ * @param {Error} error - The error object
+ * @param {string} operation - The operation that failed (e.g., 'set', 'get', 'delete')
+ * @returns {Error} Enhanced error with helpful message
+ */
+function handleKVError(error, operation) {
+  let userMessage = `KV Storage ${operation} failed`;
+  const originalMessage = error.message || '';
+
+  if (originalMessage.includes('401') || originalMessage.includes('Unauthorized')) {
+    userMessage = `KV Storage authentication failed. Please verify KV_REST_API_TOKEN is correct.`;
+    errorLog('KV auth error', error, { suggestion: 'Check KV_REST_API_TOKEN in .env.local' });
+  } else if (originalMessage.includes('403') || originalMessage.includes('Forbidden')) {
+    userMessage = `KV Storage access denied. Token may lack permissions.`;
+    errorLog('KV permission error', error, { suggestion: 'Verify token permissions' });
+  } else if (originalMessage.includes('network') || originalMessage.includes('ENOTFOUND')) {
+    userMessage = `Network error connecting to KV Storage.`;
+    errorLog('KV network error', error, { suggestion: 'Check internet connection and KV_REST_API_URL' });
+  } else if (!validateKVConfig()) {
+    userMessage = `KV environment variables are not configured correctly in .env.local`;
+    errorLog('KV config error', error, { suggestion: 'Set valid KV_REST_API_URL and KV_REST_API_TOKEN' });
+  } else {
+    errorLog('KV error', error, { operation });
+  }
+
+  const enhancedError = new Error(userMessage);
+  enhancedError.originalError = error;
+  enhancedError.operation = operation;
+  return enhancedError;
+}
+
+/**
  * Initialize local storage directory for development
  */
 async function initLocalStorage() {
@@ -143,7 +241,8 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
         });
         debugLog('Metadata stored successfully in KV', { fileId });
       } catch (kvError) {
-        errorLog('Failed to store metadata in KV', kvError, { fileId, metadata });
+        const enhancedError = handleKVError(kvError, 'set');
+        errorLog('Failed to store metadata in KV', enhancedError, { fileId, metadata });
         // Attempt to clean up blob
         try {
           await del(blob.url);
@@ -151,7 +250,7 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
         } catch (delError) {
           errorLog('Failed to clean up blob', delError, { url: blob.url });
         }
-        throw new Error(`Failed to store file metadata: ${kvError.message}`);
+        throw enhancedError;
       }
 
       return {
@@ -161,18 +260,16 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       };
 
     } catch (error) {
-      errorLog('Blob storage upload failed', error, {
+      // Use enhanced error handler if it's not already an enhanced error
+      const enhancedError = error.originalError ? error : handleBlobError(error, 'upload');
+
+      errorLog('Blob storage upload failed', enhancedError, {
         filename,
         size: fileBuffer.length,
         hasToken: !!process.env.BLOB_READ_WRITE_TOKEN
       });
 
-      // Provide more helpful error message
-      if (error.message.includes('BLOB_READ_WRITE_TOKEN')) {
-        throw error;
-      }
-
-      throw new Error(`Failed to upload file to Blob storage: ${error.message}`);
+      throw enhancedError;
     }
 
   } else {
@@ -199,12 +296,25 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       };
 
       debugLog('Storing metadata in KV...', { fileId });
-      
-      await kv.set(`file_${fileId}`, metadata, {
-        ex: Math.floor(FILE_RETENTION_MS / 1000)
-      });
 
-      debugLog('Local file saved and metadata stored', { fileId, filePath });
+      try {
+        await kv.set(`file_${fileId}`, metadata, {
+          ex: Math.floor(FILE_RETENTION_MS / 1000)
+        });
+        debugLog('Local file saved and metadata stored', { fileId, filePath });
+      } catch (kvError) {
+        const enhancedError = handleKVError(kvError, 'set');
+        errorLog('Failed to store metadata in KV for local file', enhancedError, { fileId });
+
+        // Try to clean up the local file
+        try {
+          await fs.unlink(filePath);
+        } catch (unlinkError) {
+          // Ignore cleanup errors
+        }
+
+        throw enhancedError;
+      }
 
       return {
         fileId,
@@ -250,8 +360,9 @@ export async function getFile(fileId) {
   try {
     metadata = await kv.get(`file_${fileId}`);
   } catch (error) {
-    errorLog('Failed to retrieve metadata from KV', error, { fileId });
-    throw new Error(`Failed to retrieve file metadata: ${error.message}`);
+    const enhancedError = handleKVError(error, 'get');
+    errorLog('Failed to retrieve metadata from KV', enhancedError, { fileId });
+    throw enhancedError;
   }
 
   if (!metadata) {
