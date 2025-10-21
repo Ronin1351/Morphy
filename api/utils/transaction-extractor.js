@@ -174,8 +174,15 @@ export async function extractTransactions(text, options = {}) {
     const startTime = Date.now();
     const TIMEOUT_MS = 30000; // 30 second timeout for line processing
 
+    console.log(`[EXTRACTOR] Starting line processing, total lines: ${lines.length}`);
+
     for (const line of lines) {
       lineNumber++;
+
+      // Log progress every 1000 lines
+      if (lineNumber % 1000 === 0) {
+        console.log(`[EXTRACTOR] Processing line ${lineNumber}/${lines.length} (${Math.round(lineNumber/lines.length*100)}%)`);
+      }
 
       // Safety check: Prevent infinite loop with max line limit
       if (lineNumber > MAX_LINES) {
@@ -420,17 +427,57 @@ function parseTransactionLine(line, format, lineNumber) {
 
 /**
  * Clean text for processing
- * 
+ * OPTIMIZED: Process line-by-line instead of entire text to prevent performance issues
+ *
  * @param {string} text - Raw text
  * @returns {string}
  */
 function cleanText(text) {
-  return text
+  if (!text) return '';
+
+  // First, normalize line endings (fast operation)
+  const normalized = text
     .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\t/g, ' ')
-    .replace(/\s{2,}/g, ' ') // Normalize multiple spaces
-    .replace(/^\s+|\s+$/gm, ''); // Trim lines
+    .replace(/\r/g, '\n');
+
+  // Process line by line to avoid expensive global regex on huge text
+  const lines = normalized.split('\n');
+  const cleanedLines = [];
+  const MAX_LINES_TO_CLEAN = 50000; // Safety limit
+  const startTime = Date.now();
+  const TIMEOUT_MS = 10000; // 10 second timeout for cleaning
+
+  for (let i = 0; i < lines.length; i++) {
+    // Safety check: max lines
+    if (i >= MAX_LINES_TO_CLEAN) {
+      console.warn(`[EXTRACTOR] cleanText stopped at ${MAX_LINES_TO_CLEAN} lines`);
+      break;
+    }
+
+    // Safety check: timeout
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      console.warn(`[EXTRACTOR] cleanText timeout after ${i} lines`);
+      break;
+    }
+
+    const line = lines[i];
+
+    // Skip empty lines early
+    if (!line.trim()) {
+      cleanedLines.push('');
+      continue;
+    }
+
+    // Clean each line individually (much faster than global regex)
+    const cleaned = line
+      .replace(/\t/g, ' ')           // Replace tabs
+      .replace(/\s{2,}/g, ' ')       // Normalize spaces (only on this line)
+      .trim();                        // Trim whitespace
+
+    cleanedLines.push(cleaned);
+  }
+
+  return cleanedLines.join('\n');
 }
 
 /**
