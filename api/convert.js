@@ -66,7 +66,7 @@ async function parseFormData(req) {
  * Main conversion handler
  */
 export default async function handler(req, res) {
-  const processingId = randomUUID();
+  const processingId = `proc_${randomUUID()}`;
   
   debugLog(processingId, 'Conversion request received', {
     method: req.method,
@@ -173,6 +173,7 @@ export default async function handler(req, res) {
 
     // Store initial processing status
     await storeProcessingResult(processingId, {
+      processingId,
       status: 'processing',
       progress: 0,
       currentStep: 'parsing',
@@ -210,6 +211,7 @@ export default async function handler(req, res) {
     if (processingId) {
       try {
         await storeProcessingResult(processingId, {
+          processingId,
           status: 'error',
           error: {
             code: error.code || 'CONVERSION_FAILED',
@@ -249,17 +251,21 @@ export default async function handler(req, res) {
  * Process conversion in background
  */
 async function processConversion(processingId, fileId, fileBuffer, originalFilename, options) {
+  const startTime = Date.now();
+
   try {
     debugLog(processingId, 'Background conversion started');
 
     // Update status: parsing
     await storeProcessingResult(processingId, {
+      processingId,
       status: 'processing',
       progress: 10,
       currentStep: 'parsing',
       fileId,
       filename: originalFilename,
       options,
+      startedAt: startTime,
     });
 
     debugLog(processingId, 'Parsing PDF...');
@@ -272,6 +278,7 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
 
     // Update status: generating
     await storeProcessingResult(processingId, {
+      processingId,
       status: 'processing',
       progress: 60,
       currentStep: 'generating',
@@ -295,30 +302,43 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
     // Upload result file
     debugLog(processingId, 'Uploading result file...');
     const outputFilename = originalFilename.replace(/\.pdf$/i, `.${options.format}`);
+
+    // Determine content type based on format
+    const contentType = options.format === 'csv'
+      ? 'text/csv'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
     const resultUpload = await uploadFile(
       excelResult.buffer,
       outputFilename,
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      contentType
     );
 
     debugLog(processingId, 'Result file uploaded', { url: resultUpload.url });
 
     // Update status: completed
     await storeProcessingResult(processingId, {
+      processingId,
       status: 'completed',
       progress: 100,
       currentStep: 'completed',
       fileId,
       filename: originalFilename,
       options,
-      result: {
+      outputFile: {
         fileId: resultUpload.fileId,
         filename: outputFilename,
+        format: options.format,
         url: resultUpload.url,
         size: resultUpload.size,
-        transactionCount: parsedData.transactions?.length || 0,
-        tableCount: excelResult.sheets?.length || 0,
       },
+      summary: {
+        totalTransactions: parsedData.transactions?.length || 0,
+        totalTables: excelResult.sheets?.length || 0,
+        validTransactions: parsedData.transactions?.filter(t => t.processingStatus === 'VALID').length || 0,
+        invalidTransactions: parsedData.transactions?.filter(t => t.processingStatus === 'ERROR').length || 0,
+      },
+      processingTime: Date.now() - startTime,
       completedAt: Date.now(),
     });
 
@@ -328,6 +348,7 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
     errorLog(processingId, 'Background conversion failed', error);
 
     await storeProcessingResult(processingId, {
+      processingId,
       status: 'error',
       progress: 0,
       currentStep: 'failed',

@@ -6,7 +6,6 @@
  */
 
 import ExcelJS from 'exceljs';
-import { uploadFile } from './storage.js';
 
 // Configuration
 const INCLUDE_SUMMARY = process.env.INCLUDE_SUMMARY_SHEET !== 'false';
@@ -30,8 +29,7 @@ const COLORS = {
 class ExcelGenerationResult {
   constructor() {
     this.success = false;
-    this.fileId = null;
-    this.url = null;
+    this.buffer = null;
     this.filename = null;
     this.size = 0;
     this.sheets = [];
@@ -51,7 +49,7 @@ export async function generateExcel(extractionResult, options = {}) {
   
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     // Set workbook properties
     workbook.creator = 'Bank Statement Converter';
     workbook.created = new Date();
@@ -81,18 +79,11 @@ export async function generateExcel(extractionResult, options = {}) {
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = options.filename || `statement_${timestamp}.xlsx`;
 
-    // Upload to storage
-    const uploadResult = await uploadFile(
-      buffer,
-      filename,
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    );
-
+    // Return buffer (upload will be handled by caller)
     result.success = true;
-    result.fileId = uploadResult.fileId;
-    result.url = uploadResult.url;
+    result.buffer = buffer;
     result.filename = filename;
-    result.size = uploadResult.size;
+    result.size = buffer.length;
 
   } catch (error) {
     result.success = false;
@@ -475,14 +466,11 @@ export async function generateCSV(extractionResult, options = {}) {
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = options.filename || `statement_${timestamp}.csv`;
 
-    // Upload to storage
-    const uploadResult = await uploadFile(buffer, filename, 'text/csv');
-
+    // Return buffer (upload will be handled by caller)
     result.success = true;
-    result.fileId = uploadResult.fileId;
-    result.url = uploadResult.url;
+    result.buffer = buffer;
     result.filename = filename;
-    result.size = uploadResult.size;
+    result.size = buffer.length;
     result.sheets = ['Transactions'];
 
   } catch (error) {
