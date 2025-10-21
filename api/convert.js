@@ -269,8 +269,8 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
     });
 
     debugLog(processingId, 'Parsing PDF...');
-    const parsedData = await parsePDF(fileBuffer, options.bankFormat);
-    
+    const parsedData = await parsePDF(fileBuffer, options);
+
     debugLog(processingId, 'PDF parsed successfully', {
       transactionsFound: parsedData.transactions?.length,
       tablesFound: parsedData.tables?.length
