@@ -122,36 +122,37 @@ export async function parsePDF(pdfBuffer, options = {}) {
 
     // Extract transactions from the text
     try {
-      const transactionResult = await extractTransactions(result.text, {
-        bankFormat: options,
-      });
+      const transactionResult = await extractTransactions(result.text, options);
 
-      if (transactionResult.success) {
-        result.transactions = transactionResult.transactions;
+      if (transactionResult && transactionResult.success) {
+        result.transactions = transactionResult.transactions || [];
 
         // Merge metadata
         if (transactionResult.metadata) {
           result.metadata.transactionExtraction = transactionResult.metadata;
         }
 
-        // Add balance information
-        if (transactionResult.openingBalance !== null) {
+        // Add balance information (check for both null and undefined)
+        if (transactionResult.openingBalance != null) {
           result.metadata.openingBalance = transactionResult.openingBalance;
         }
-        if (transactionResult.closingBalance !== null) {
+        if (transactionResult.closingBalance != null) {
           result.metadata.closingBalance = transactionResult.closingBalance;
         }
 
-        // Merge warnings and errors
-        if (transactionResult.warnings.length > 0) {
-          result.warnings.push(...transactionResult.warnings.map(w => ({
+        // Merge warnings and errors (normalize to arrays first)
+        const warnings = Array.isArray(transactionResult.warnings) ? transactionResult.warnings : [];
+        if (warnings.length > 0) {
+          result.warnings.push(...warnings.map(w => ({
             code: w.code || 'TRANSACTION_WARNING',
             message: w.message || w,
             context: w.context || {},
           })));
         }
-        if (transactionResult.errors.length > 0) {
-          result.errors.push(...transactionResult.errors.map(e => ({
+
+        const errors = Array.isArray(transactionResult.errors) ? transactionResult.errors : [];
+        if (errors.length > 0) {
+          result.errors.push(...errors.map(e => ({
             code: e.code || 'TRANSACTION_ERROR',
             message: e.message || e,
             details: e.details || {},
@@ -161,14 +162,16 @@ export async function parsePDF(pdfBuffer, options = {}) {
         result.warnings.push({
           code: 'NO_TRANSACTIONS_FOUND',
           message: 'Could not extract transactions from PDF',
-          context: { errors: transactionResult.errors },
+          context: {
+            errors: transactionResult ? (transactionResult.errors || []) : []
+          },
         });
       }
     } catch (transactionError) {
       result.warnings.push({
         code: 'TRANSACTION_EXTRACTION_FAILED',
         message: 'Failed to extract transactions',
-        details: transactionError.message,
+        details: transactionError?.stack || transactionError?.message || String(transactionError),
       });
     }
 
