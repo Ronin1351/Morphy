@@ -112,8 +112,25 @@ export async function uploadFile(fileBuffer, originalFilename, contentType = 'ap
       debugLog('Uploading to Vercel Blob Storage...', { filename });
 
       // Check if BLOB_READ_WRITE_TOKEN is configured
-      if (!process.env.BLOB_READ_WRITE_TOKEN) {
-        throw new Error('BLOB_READ_WRITE_TOKEN environment variable is not configured. Please set it in Vercel Dashboard.');
+      if (!process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN === 'vercel_blob_rw_xxxxxxxxxxxxx') {
+        const errorMsg = `BLOB_READ_WRITE_TOKEN is not configured properly.
+
+Setup Instructions:
+1. Go to your Vercel Dashboard: https://vercel.com/dashboard
+2. Select your project
+3. Go to Settings → Environment Variables
+4. Add BLOB_READ_WRITE_TOKEN with your actual token
+5. Redeploy your application
+
+For local development:
+- Set NODE_ENV=development in .env.local (no blob storage required)
+- Or get a Blob token from Vercel and set it in .env.local
+
+Current environment: ${process.env.NODE_ENV || 'unknown'}
+FORCE_BLOB: ${process.env.FORCE_BLOB || 'false'}`;
+
+        errorLog('BLOB_READ_WRITE_TOKEN not configured', new Error(errorMsg));
+        throw new Error('BLOB_READ_WRITE_TOKEN environment variable is not configured. Please set it in Vercel Dashboard or use development mode.');
       }
 
       const blob = await put(filename, fileBuffer, {

@@ -44,6 +44,9 @@ class App {
       // Load supported banks (optional)
       await this.loadBanks();
 
+      // Check system health
+      await this.checkHealth();
+
       // Show welcome toast
       this.toast('Welcome! Upload your PDF to get started.', 'info');
 
@@ -270,6 +273,86 @@ class App {
       console.warn('Failed to load banks:', error);
       // Non-critical error, continue without bank list
     }
+  }
+
+  /**
+   * Check system health and configuration
+   */
+  async checkHealth() {
+    try {
+      const response = await fetch('/api/health');
+      const health = await response.json();
+
+      console.log('[HEALTH CHECK]', health);
+
+      // Show warnings if configuration issues exist
+      if (health.errors && health.errors.length > 0) {
+        health.errors.forEach(error => {
+          console.error('[CONFIG ERROR]', error);
+
+          // Show user-friendly message
+          if (error.code === 'BLOB_TOKEN_MISSING') {
+            this.showConfigurationWarning(
+              'Configuration Required',
+              'File uploads require Vercel Blob Storage to be configured. Please contact the administrator to set up BLOB_READ_WRITE_TOKEN in the Vercel Dashboard.',
+              'warning'
+            );
+          }
+        });
+      }
+
+      if (health.warnings && health.warnings.length > 0) {
+        health.warnings.forEach(warning => {
+          console.warn('[CONFIG WARNING]', warning);
+        });
+      }
+
+    } catch (error) {
+      console.warn('Health check failed:', error);
+      // Non-critical error, continue without health check
+    }
+  }
+
+  /**
+   * Show configuration warning banner
+   */
+  showConfigurationWarning(title, message, type = 'warning') {
+    // Create a warning banner at the top of the page
+    const banner = document.createElement('div');
+    banner.className = 'config-warning';
+    banner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: ${type === 'error' ? '#dc2626' : '#f59e0b'};
+      color: white;
+      padding: 12px 20px;
+      text-align: center;
+      z-index: 10000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      font-size: 14px;
+      line-height: 1.5;
+    `;
+
+    banner.innerHTML = `
+      <strong>${title}:</strong> ${message}
+      <button onclick="this.parentElement.remove()" style="
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        padding: 4px 12px;
+        margin-left: 12px;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 12px;
+      ">Dismiss</button>
+    `;
+
+    document.body.insertBefore(banner, document.body.firstChild);
+
+    // Also adjust body padding to account for banner
+    document.body.style.paddingTop = '50px';
   }
 
   /**

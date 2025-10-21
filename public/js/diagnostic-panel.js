@@ -342,5 +342,3 @@ if (typeof window !== 'undefined') {
   console.log('%cPress Ctrl+Shift+D to toggle panel', 'color: #00ccff;');
   console.log('%cOr use: showDiagnostics(), hideDiagnostics(), clearDiagnostics()', 'color: #888;');
 }
-
-export default DiagnosticPanel;
