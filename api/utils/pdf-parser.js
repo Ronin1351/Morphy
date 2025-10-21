@@ -8,6 +8,7 @@
 import pdfParse from 'pdf-parse';
 import { createWorker } from 'tesseract.js';
 import { validateFile } from './validator.js';
+import { extractTransactions } from './transaction-extractor.js';
 
 // Configuration
 const ENABLE_OCR = process.env.ENABLE_OCR === 'true';
@@ -25,6 +26,7 @@ class PDFParseResult {
     this.pages = [];
     this.metadata = {};
     this.tables = [];
+    this.transactions = [];
     this.isScanned = false;
     this.ocrUsed = false;
     this.confidence = 100;
@@ -117,6 +119,58 @@ export async function parsePDF(pdfBuffer, options = {}) {
     // Extract account information and date ranges
     result.metadata.accountInfo = extractAccountInfo(result.text);
     result.metadata.statementPeriod = extractStatementPeriod(result.text);
+
+    // Extract transactions from the text
+    try {
+      const transactionResult = await extractTransactions(result.text, {
+        bankFormat: options,
+      });
+
+      if (transactionResult.success) {
+        result.transactions = transactionResult.transactions;
+
+        // Merge metadata
+        if (transactionResult.metadata) {
+          result.metadata.transactionExtraction = transactionResult.metadata;
+        }
+
+        // Add balance information
+        if (transactionResult.openingBalance !== null) {
+          result.metadata.openingBalance = transactionResult.openingBalance;
+        }
+        if (transactionResult.closingBalance !== null) {
+          result.metadata.closingBalance = transactionResult.closingBalance;
+        }
+
+        // Merge warnings and errors
+        if (transactionResult.warnings.length > 0) {
+          result.warnings.push(...transactionResult.warnings.map(w => ({
+            code: w.code || 'TRANSACTION_WARNING',
+            message: w.message || w,
+            context: w.context || {},
+          })));
+        }
+        if (transactionResult.errors.length > 0) {
+          result.errors.push(...transactionResult.errors.map(e => ({
+            code: e.code || 'TRANSACTION_ERROR',
+            message: e.message || e,
+            details: e.details || {},
+          })));
+        }
+      } else {
+        result.warnings.push({
+          code: 'NO_TRANSACTIONS_FOUND',
+          message: 'Could not extract transactions from PDF',
+          context: { errors: transactionResult.errors },
+        });
+      }
+    } catch (transactionError) {
+      result.warnings.push({
+        code: 'TRANSACTION_EXTRACTION_FAILED',
+        message: 'Failed to extract transactions',
+        details: transactionError.message,
+      });
+    }
 
     result.success = true;
     result.metadata.processingTime = Date.now() - startTime;
