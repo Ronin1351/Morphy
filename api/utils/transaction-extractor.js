@@ -168,41 +168,100 @@ export async function extractTransactions(text, options = {}) {
     // Extract transaction lines
     const transactions = [];
     let lineNumber = 0;
+    let errorCount = 0;
+    const MAX_ERRORS = 50; // Stop if too many errors
+    const MAX_LINES = 10000; // Safety limit to prevent infinite loops
+    const startTime = Date.now();
+    const TIMEOUT_MS = 30000; // 30 second timeout for line processing
 
     for (const line of lines) {
       lineNumber++;
-      
+
+      // Safety check: Prevent infinite loop with max line limit
+      if (lineNumber > MAX_LINES) {
+        result.warnings.push({
+          code: 'MAX_LINES_EXCEEDED',
+          message: `Processing stopped after ${MAX_LINES} lines to prevent infinite loop`,
+        });
+        console.warn(`[EXTRACTOR] Max lines exceeded: ${lineNumber}`);
+        break;
+      }
+
+      // Safety check: Timeout protection
+      const elapsed = Date.now() - startTime;
+      if (elapsed > TIMEOUT_MS) {
+        result.warnings.push({
+          code: 'PROCESSING_TIMEOUT',
+          message: `Line processing timeout after ${elapsed}ms at line ${lineNumber}`,
+        });
+        console.warn(`[EXTRACTOR] Timeout at line ${lineNumber}, elapsed: ${elapsed}ms`);
+        break;
+      }
+
+      // Safety check: Too many errors
+      if (errorCount > MAX_ERRORS) {
+        result.warnings.push({
+          code: 'MAX_ERRORS_EXCEEDED',
+          message: `Processing stopped after ${MAX_ERRORS} errors`,
+        });
+        console.warn(`[EXTRACTOR] Max errors exceeded: ${errorCount}`);
+        break;
+      }
+
       // Skip empty lines and headers
       if (!line.trim() || isHeaderLine(line)) {
         continue;
       }
 
-      // Try to match transaction patterns
-      const transaction = parseTransactionLine(line, detectedFormat, lineNumber);
-      
-      if (transaction) {
-        // Validate transaction
-        const validation = validateTransaction(transaction);
-        if (validation.valid) {
-          transaction.processingStatus = 'VALID';
-          result.validTransactions++;
-        } else {
-          transaction.processingStatus = validation.warnings.length > 0 ? 'WARNING' : 'ERROR';
-          transaction.errorMessages = validation.errors.map(e => e.message);
-          result.invalidTransactions++;
-          
-          if (validation.errors.length > 0) {
-            result.errors.push({
-              line: lineNumber,
-              transaction,
-              errors: validation.errors,
+      // Try to match transaction patterns with error handling
+      try {
+        const transaction = parseTransactionLine(line, detectedFormat, lineNumber);
+
+        if (transaction) {
+          // Validate transaction with error handling
+          try {
+            const validation = validateTransaction(transaction);
+            if (validation.valid) {
+              transaction.processingStatus = 'VALID';
+              result.validTransactions++;
+            } else {
+              transaction.processingStatus = validation.warnings.length > 0 ? 'WARNING' : 'ERROR';
+              transaction.errorMessages = validation.errors.map(e => e.message);
+              result.invalidTransactions++;
+              errorCount++;
+
+              if (validation.errors.length > 0) {
+                result.errors.push({
+                  line: lineNumber,
+                  transaction,
+                  errors: validation.errors,
+                });
+              }
+            }
+
+            transactions.push(transaction);
+          } catch (validationError) {
+            errorCount++;
+            console.error(`[EXTRACTOR] Validation error at line ${lineNumber}:`, validationError);
+            result.warnings.push({
+              code: 'VALIDATION_ERROR',
+              message: `Failed to validate transaction at line ${lineNumber}: ${validationError.message}`,
+              context: { line: lineNumber, text: line.substring(0, 100) },
             });
           }
         }
-
-        transactions.push(transaction);
+      } catch (parseError) {
+        errorCount++;
+        console.error(`[EXTRACTOR] Parse error at line ${lineNumber}:`, parseError);
+        result.warnings.push({
+          code: 'PARSE_ERROR',
+          message: `Failed to parse line ${lineNumber}: ${parseError.message}`,
+          context: { line: lineNumber, text: line.substring(0, 100) },
+        });
       }
     }
+
+    console.log(`[EXTRACTOR] Processed ${lineNumber} lines, found ${transactions.length} transactions in ${Date.now() - startTime}ms`);
 
     // Post-processing
     result.transactions = postProcessTransactions(transactions, result);
@@ -275,61 +334,85 @@ function detectBankFormat(text, formats) {
  * @returns {Transaction|null}
  */
 function parseTransactionLine(line, format, lineNumber) {
-  for (const patternName in format.patterns) {
-    const pattern = format.patterns[patternName];
-    const match = line.match(pattern);
-    
-    if (match) {
-      const transaction = new Transaction();
-      transaction.rawLine = line;
-      transaction.lineNumber = lineNumber;
-      transaction.transactionId = `txn_${lineNumber}_${Date.now()}`;
+  // Safety check: Prevent processing extremely long lines
+  if (line.length > 5000) {
+    console.warn(`[EXTRACTOR] Skipping extremely long line ${lineNumber} (${line.length} chars)`);
+    return null;
+  }
 
-      // Extract based on pattern type
-      if (patternName === 'standard') {
-        transaction.date = normalizeDate(match[1]);
-        transaction.description = match[2].trim();
-        transaction.debit = match[3] ? parseAmount(match[3], format) : null;
-        transaction.credit = match[4] ? parseAmount(match[4], format) : null;
-        transaction.balance = match[5] ? parseAmount(match[5], format) : null;
-      } else if (patternName === 'simple') {
-        transaction.date = normalizeDate(match[1]);
-        transaction.description = match[2].trim();
-        const amount = parseAmount(match[3], format);
-        // Determine if debit or credit based on description keywords
-        if (isDebitTransaction(match[2])) {
-          transaction.debit = amount;
-        } else {
-          transaction.credit = amount;
-        }
-        transaction.balance = match[4] ? parseAmount(match[4], format) : null;
-      } else if (patternName === 'combined') {
-        transaction.date = normalizeDate(match[1]);
-        transaction.description = match[2].trim();
-        const amount = parseAmount(match[3], format);
-        const type = match[4]; // D or C
-        if (type === 'D') {
-          transaction.debit = amount;
-        } else {
-          transaction.credit = amount;
-        }
-        transaction.balance = match[5] ? parseAmount(match[5], format) : null;
+  try {
+    for (const patternName in format.patterns) {
+      const pattern = format.patterns[patternName];
+
+      let match;
+      try {
+        // Protect against catastrophic backtracking in regex
+        match = line.match(pattern);
+      } catch (regexError) {
+        console.error(`[EXTRACTOR] Regex error on line ${lineNumber}:`, regexError);
+        throw new Error(`Regex matching failed: ${regexError.message}`);
       }
 
-      // Calculate amount (net transaction)
-      if (transaction.debit) {
-        transaction.amount = -Math.abs(transaction.debit);
-        transaction.transactionType = 'DEBIT';
-      } else if (transaction.credit) {
-        transaction.amount = Math.abs(transaction.credit);
-        transaction.transactionType = 'CREDIT';
+      if (match) {
+        const transaction = new Transaction();
+        transaction.rawLine = line;
+        transaction.lineNumber = lineNumber;
+        transaction.transactionId = `txn_${lineNumber}_${Date.now()}`;
+
+        try {
+          // Extract based on pattern type
+          if (patternName === 'standard') {
+            transaction.date = normalizeDate(match[1]);
+            transaction.description = match[2]?.trim() || '';
+            transaction.debit = match[3] ? parseAmount(match[3], format) : null;
+            transaction.credit = match[4] ? parseAmount(match[4], format) : null;
+            transaction.balance = match[5] ? parseAmount(match[5], format) : null;
+          } else if (patternName === 'simple') {
+            transaction.date = normalizeDate(match[1]);
+            transaction.description = match[2]?.trim() || '';
+            const amount = parseAmount(match[3], format);
+            // Determine if debit or credit based on description keywords
+            if (isDebitTransaction(match[2])) {
+              transaction.debit = amount;
+            } else {
+              transaction.credit = amount;
+            }
+            transaction.balance = match[4] ? parseAmount(match[4], format) : null;
+          } else if (patternName === 'combined') {
+            transaction.date = normalizeDate(match[1]);
+            transaction.description = match[2]?.trim() || '';
+            const amount = parseAmount(match[3], format);
+            const type = match[4]; // D or C
+            if (type === 'D') {
+              transaction.debit = amount;
+            } else {
+              transaction.credit = amount;
+            }
+            transaction.balance = match[5] ? parseAmount(match[5], format) : null;
+          }
+
+          // Calculate amount (net transaction)
+          if (transaction.debit) {
+            transaction.amount = -Math.abs(transaction.debit);
+            transaction.transactionType = 'DEBIT';
+          } else if (transaction.credit) {
+            transaction.amount = Math.abs(transaction.credit);
+            transaction.transactionType = 'CREDIT';
+          }
+
+          // Categorize transaction
+          transaction.transactionType = categorizeTransaction(transaction.description, transaction.transactionType);
+
+          return transaction;
+        } catch (extractError) {
+          console.error(`[EXTRACTOR] Error extracting transaction data at line ${lineNumber}:`, extractError);
+          throw new Error(`Failed to extract transaction data: ${extractError.message}`);
+        }
       }
-
-      // Categorize transaction
-      transaction.transactionType = categorizeTransaction(transaction.description, transaction.transactionType);
-
-      return transaction;
     }
+  } catch (error) {
+    console.error(`[EXTRACTOR] Error parsing transaction line ${lineNumber}:`, error);
+    throw error;
   }
 
   return null;
