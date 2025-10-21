@@ -252,6 +252,7 @@ export default async function handler(req, res) {
  */
 async function processConversion(processingId, fileId, fileBuffer, originalFilename, options) {
   const startTime = Date.now();
+  let watchdogTimer = null;
 
   try {
     debugLog(processingId, 'Background conversion started');
@@ -270,18 +271,87 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
 
     debugLog(processingId, 'Parsing PDF...');
 
-    // Add timeout protection to parsing
-    const PARSE_TIMEOUT = parseInt(process.env.PARSE_TIMEOUT_MS || '45000'); // 45 seconds
+    // Early validation: Check buffer size
+    const MAX_BUFFER_SIZE = 52428800; // 50MB
+    if (fileBuffer.length > MAX_BUFFER_SIZE) {
+      throw new Error(`PDF file too large (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB). Maximum size is 50MB.`);
+    }
+
+    // Check if buffer is valid PDF
+    const pdfHeader = fileBuffer.slice(0, 5).toString('utf-8');
+    if (!pdfHeader.startsWith('%PDF-')) {
+      throw new Error('Invalid PDF file format - file does not start with PDF header');
+    }
+
+    debugLog(processingId, 'PDF validation passed', {
+      size: fileBuffer.length,
+      sizeInMB: (fileBuffer.length / 1024 / 1024).toFixed(2)
+    });
+
+    // Add timeout protection to parsing with watchdog
+    const PARSE_TIMEOUT = parseInt(process.env.PARSE_TIMEOUT_MS || '60000'); // 60 seconds
+    const WATCHDOG_TIMEOUT = PARSE_TIMEOUT + 5000; // 5 seconds grace period
     let parsedData;
+    let parsingCompleted = false;
+
+    // Start watchdog timer that will mark as failed if parsing hangs
+    watchdogTimer = setTimeout(async () => {
+      if (!parsingCompleted) {
+        errorLog(processingId, 'Watchdog timeout triggered - parsing hung', new Error('Watchdog timeout'));
+        await storeProcessingResult(processingId, {
+          processingId,
+          status: 'error',
+          progress: 10,
+          currentStep: 'failed',
+          fileId,
+          filename: originalFilename,
+          error: {
+            code: 'PARSING_TIMEOUT',
+            message: 'PDF parsing timed out. The file may be too complex or corrupted.',
+            step: 'parsing'
+          },
+          failedAt: Date.now(),
+        });
+      }
+    }, WATCHDOG_TIMEOUT);
 
     try {
+      // Set reasonable parsing limits
+      const parsingOptions = {
+        ...options,
+        maxPages: options.maxPages || 50, // Limit to 50 pages by default
+        timeout: PARSE_TIMEOUT - 5000, // Give parser slightly less time than our overall timeout
+      };
+
+      debugLog(processingId, 'Starting PDF parse with options', parsingOptions);
+
+      // Wrap parsing with timeout
       parsedData = await Promise.race([
-        parsePDF(fileBuffer, options),
+        parsePDF(fileBuffer, parsingOptions),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('PDF parsing timeout exceeded')), PARSE_TIMEOUT)
+          setTimeout(() => reject(new Error('PDF parsing timeout exceeded - file may be too large or complex')), PARSE_TIMEOUT)
         )
       ]);
+
+      parsingCompleted = true;
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+
+      // Check if parsing was successful
+      if (!parsedData) {
+        throw new Error('PDF parsing returned no data');
+      }
+
+      if (!parsedData.success) {
+        const errorMsg = parsedData.errors?.[0]?.message || 'PDF parsing failed with unknown error';
+        throw new Error(errorMsg);
+      }
+
     } catch (parseError) {
+      parsingCompleted = true;
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+
       errorLog(processingId, 'PDF parsing failed', parseError);
       throw new Error(`PDF parsing failed: ${parseError.message}`);
     }
@@ -362,6 +432,12 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
   } catch (error) {
     errorLog(processingId, 'Background conversion failed', error);
 
+    // Clear watchdog if it's still running
+    if (watchdogTimer) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
+
     await storeProcessingResult(processingId, {
       processingId,
       status: 'error',
@@ -376,5 +452,11 @@ async function processConversion(processingId, fileId, fileBuffer, originalFilen
       },
       failedAt: Date.now(),
     });
+  } finally {
+    // Ensure watchdog is cleaned up
+    if (watchdogTimer) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
   }
 }
